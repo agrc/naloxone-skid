@@ -34,3 +34,5 @@ __pycache__
 cov.xml
 .coverage
 .ruff_cache/
+src/naloxone/secrets/secrets_template.json
+src/naloxone/secrets/secrets.json

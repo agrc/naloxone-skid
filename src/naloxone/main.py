@@ -15,7 +15,7 @@ from palletjack import extract, load, transform, utils
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
 
-from skidname import __version__
+from naloxone import __version__
 
 from . import config
 

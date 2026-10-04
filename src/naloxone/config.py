@@ -7,7 +7,7 @@ import socket
 import urllib.request
 from urllib.error import URLError
 
-SKID_NAME = ""
+SKID_NAME = "naloxone-skid"
 
 try:
     url = "http://metadata.google.internal/computeMetadata/v1/project/project-id"
