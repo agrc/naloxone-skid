@@ -36,3 +36,4 @@ cov.xml
 .ruff_cache/
 src/naloxone/secrets/secrets_template.json
 src/naloxone/secrets/secrets.json
+src/naloxone/secrets/sheets-sa.json
