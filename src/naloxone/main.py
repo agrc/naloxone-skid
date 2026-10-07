@@ -246,6 +246,43 @@ def _write_columns_to_sheet(gsheets_client, sheet_id, df, fields, worksheet_inde
         cell_range = f"{format_addr((1, column))}:{format_addr((last_row, column))}"
         worksheet.update_values(cell_range, [[field]] + [[value] for value in output[field].tolist()])
 
+    red = {"red": 244 / 255, "green": 204 / 255, "blue": 204 / 255}
+    yellow = {"red": 244 / 255, "green": 233 / 255, "blue": 204 / 255}
+    scores = pd.to_numeric(output["score"], errors="coerce") if "score" in output else None
+    format_requests = []
+    for field in fields:
+        if field not in ("website_status", "web_status", "match_address", "score"):
+            continue
+
+        rows = []
+        for index, value in output[field].items():
+            color = None
+            if field in ("website_status", "web_status"):
+                if value != "Valid":
+                    color = red
+            else:
+                score = scores.loc[index] if scores is not None else float("nan")
+                address = str(output.loc[index, "match_address"]) if "match_address" in output else ""
+                if address.strip().casefold() == "no match" or score == 0:
+                    color = red
+                elif 0 < score < 90:
+                    color = yellow
+
+            cell_format = {"backgroundColorStyle": {"rgbColor": color}} if color else {}
+            rows.append({"values": [{"userEnteredFormat": cell_format}]})
+
+        if rows:
+            format_requests.append({
+                "updateCells": {
+                    "start": {"sheetId": worksheet.id, "rowIndex": 1, "columnIndex": header.index(field)},
+                    "rows": rows,
+                    "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.backgroundColorStyle",
+                }
+            })
+
+    if format_requests:
+        gsheets_client.sheet.batch_update(sheet_id, format_requests)
+
     module_logger.info(f"Wrote {fields} for {len(output)} rows to worksheet '{worksheet.title}'")
 
 
@@ -297,7 +334,7 @@ def process():
                                          street_col="Address",
                                          zone_col="Zip_Code",
                                          wkid =4326,
-                                         acceptScore=90)
+                                         acceptScore=70)
 
         sheet_fields = ["website_status", "x", "y", "score", "match_address"]
         _write_columns_to_sheet(
