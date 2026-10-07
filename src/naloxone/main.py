@@ -195,15 +195,20 @@ def process():
         gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
 
         module_logger.info("Reading in data from Google Sheets")
-        credentials, _ = google_auth_default()
-        loader = extract.GSheetLoader(credentials)
+        # credentials, _ = google_auth_default() # error
+        credentials, _ = google_auth_default(
+    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+) # error, needs quota project?
+        # loader = extract.GSheetLoader(credentials) 
+        
+        loader = extract.GSheetLoader(Path(__file__).parent / "secrets" / "sheets-sa.json") # works
         df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
 
         n_rows, n_columns = df.shape
         module_logger.info(f"Loaded sheet with {n_rows} rows and {n_columns} columns")
 
         #: Check website URLs
-        df = _check_links(df, url_field="Website", status_field="website_status")
+        df = _check_links(df, url_field="Org website", status_field="website_status")
 
         geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
 
@@ -227,6 +232,7 @@ def process():
 
         opts = geocoded_df["Opts_In_OUT"]
         update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
+        update_df = update_df.rename(columns={"matchAddress": "match_address"})
         module_logger.info(f"{len(update_df)} rows have a blank Opts In/Out value")
 
         updated_count = 0
