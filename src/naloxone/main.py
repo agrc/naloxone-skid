@@ -11,9 +11,15 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import arcgis
+import pygsheets
+import requests
+from google.auth import default as google_auth_default
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
 from palletjack import extract, load, transform, utils
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
+from urllib.parse import urlparse
 
 from naloxone import __version__
 
@@ -107,6 +113,67 @@ def _remove_log_file_handlers(log_name, loggers):
                 handler.close()
 
 
+def _check_url(session, url, timeout=10):
+
+    url = str(url).strip()
+    if not urlparse(url).scheme:
+        url = f"https://{url}"
+
+    try:
+        response = session.head(url, timeout=timeout, allow_redirects=True)
+        #: Some servers reject HEAD but serve GET fine
+        if response.status_code in (403, 405, 501):
+            response = session.get(url, timeout=timeout, allow_redirects=True, stream=True)
+            response.close()
+    #: ConnectTimeout subclasses both Timeout and ConnectionError, so Timeout must come first
+    except requests.exceptions.Timeout:
+        return "Connection timed out"
+    except (
+        requests.exceptions.ConnectionError,
+        requests.exceptions.InvalidURL,
+        requests.exceptions.MissingSchema,
+        requests.exceptions.InvalidSchema,
+    ):
+        return "Failed to connect. The URL might be invalid or the site may be down."
+    except requests.exceptions.RequestException as error:
+        return f"An error occurred: {error.__class__.__name__}"
+
+    if response.status_code >= 400:
+        return f"An error occurred: {response.status_code}"
+    return "Valid"
+
+def _check_links(df, url_field="Org website", status_field="website_status", max_workers=10):
+    """Check the status of URLs in a DataFrame.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the URLs.
+        url_field (str): The column name containing the URLs.
+        status_field (str): Column to write results to.
+        max_workers (int): Number of concurrent requests. Defaults to 10.
+
+    Returns:
+        pd.DataFrame: The DataFrame with the status codes added.
+    """
+    module_logger = logging.getLogger(config.SKID_NAME)
+    module_logger.info(f"Checking links in column '{url_field}' and writing results to '{status_field}'")
+
+    urls = df[url_field].fillna("").astype(str).str.strip()
+    unique_urls = urls.unique()
+    module_logger.info(f"Checking {len(unique_urls)} unique website links")
+
+    with requests.Session() as session, ThreadPoolExecutor(max_workers=max_workers) as executor:
+        session.headers["User-Agent"] = "Mozilla/5.0 (compatible; naloxone-skid link checker)"
+        results = dict(zip(unique_urls, executor.map(lambda url: _check_url(session, url), unique_urls)))
+
+    df = df.assign(**{status_field: urls.map(results)})
+
+    invalid = df[~df[status_field].str.startswith("Valid")]
+    module_logger.info(f"{len(invalid)} rows have an invalid or missing website")
+    for url, status in invalid[[url_field, status_field]].drop_duplicates().itertuples(index=False):
+        module_logger.debug(f"{url}: {status}")
+
+    return df
+
 def process():
     """The main function that does all the work."""
 
@@ -122,30 +189,52 @@ def process():
 
         skid_supervisor = _initialize(log_path, secrets.SENDGRID_API_KEY)
         module_logger = logging.getLogger(config.SKID_NAME)
+        module_logger.info(f"Starting {config.SKID_NAME} version {__version__}")
 
         #: Get our GIS object via the ArcGIS API for Python
         gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
 
-        #########################################################################
-        #: Use the various palletjack classes and other code to do your work here
-        #########################################################################
+        module_logger.info("Reading in data from Google Sheets")
+        credentials, _ = google_auth_default()
+        loader = extract.GSheetLoader(credentials)
+        df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
 
-        module_logger.info("Log messages with module_logger.info() or module_logger.debug()")
+        n_rows, n_columns = df.shape
+        module_logger.info(f"Loaded sheet with {n_rows} rows and {n_columns} columns")
 
-        #: Create a extract object to load your new data
-        extractor = extract.PostgresLoader("host", "database", "user", "password")
-        new_data_df = extractor.read_table_into_dataframe("table_name", "index_column", "crs", "shape_column")
+        #: Check website URLs
+        df = _check_links(df, url_field="Website", status_field="website_status")
 
-        #: Transform your data
-        new_data_df = new_data_df["new_column"] = "do custom transform stuff here"
-        new_data_df = transform.DataCleaning.rename_dataframe_columns_for_agol(new_data_df)
+        geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
 
-        #: Use retry for operations that may fail randomly (network issues, etc)
-        utils.retry("method_to_retry", "arg1", keyword_arg="arg2")
+        #: Geocode 
+        #: drop pervious geocode fields if they exist
+        df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors='ignore')
+        module_logger.info("Dropped previous geocode fields if they existed")
+        df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
+        module_logger.info("Geocoding locations")
+        geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY)
+        geocoded_df = geocoder.geocode_dataframe(df,
+                                         street_col="Address",
+                                         zone_col="Zip_Code",
+                                         wkid =4326,
+                                         acceptScore=90)
 
-        #: Create a load object to load your new data
-        loader = load.FeatureServiceUpdater(gis, "item_id")
-        loader.update_features(new_data_df)
+        #: OVERWRITE / TRUNCATE AND LOAD DATA
+        
+
+        # TODO: TRUNCATE DATA COLUMNS 
+
+        opts = geocoded_df["Opts_In_OUT"]
+        update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
+        module_logger.info(f"{len(update_df)} rows have a blank Opts In/Out value")
+
+        updated_count = 0
+        if not update_df.empty:
+            overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=tempdir_path)
+            overwriter.truncate_and_load(update_df, save_old=True)
+            module_logger.info(f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}.")
+
 
         end = datetime.now(timezone.utc)
 
@@ -158,6 +247,7 @@ def process():
             f"Start time: {start.strftime('%H:%M:%S')}",
             f"End time: {end.strftime('%H:%M:%S')}",
             f"Duration: {end - start!s}",
+            f"Features updated: {updated_count}",
             #: Add other rows here containing summary info captured/calculated during the working portion of the skid,
             #: like the number of rows updated or the number of successful attachment overwrites.
         ]
