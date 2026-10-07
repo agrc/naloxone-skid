@@ -33,23 +33,22 @@ LOG_FILE_NAME = "log"
 JOIN_COLUMN = ""
 ATTACHMENT_LINK_COLUMN = ""
 ATTACHMENT_PATH_COLUMN = ""
-FIELDS = {
-    "Opts_In_OUT",
-    "Name",
-    "Provides_FTS_XTS_Yes_No",
-    "Type",
-    "Address",
-    "City",
-    "Zipcode",
-    "Phone",
-    "URL",
-    "Hours",
-    "x",
-    "y",
-    "score",
-    "match_address",
-    "x",
-    "y",
-    "score",
-    "match_ad"
+#: Field name -> type ("str", "int", or "float"); must match the live AGOL layer
+AGOL_SCHEMA = {
+    "Opts_In_OUT": "str",
+    "Organization_Name": "str",
+    "Provides_FTS_XTS_Yes_No": "str",
+    "Organization_Type": "str",
+    "Address": "str",
+    "City": "str",
+    "Zip_Code": "int",
+    "Org_Phone_Number": "str",
+    "Org_website": "str",
+    "Org_hours_of_operation": "str",
+    "website_status": "str",
+    "x": "float",
+    "y": "float",
+    "score": "float",
+    "match_address": "str",
+    "geocode_status": "str",
 }
