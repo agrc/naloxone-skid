@@ -11,8 +11,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import arcgis
-import pygsheets
 import requests
+from pygsheets.utils import format_addr
 from google.auth import default as google_auth_default
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -216,6 +216,39 @@ def _conform_to_schema(df, schema):
     return df
 
 
+def _write_columns_to_sheet(gsheets_client, sheet_id, df, fields, worksheet_index=0):
+    """Write df columns to the same-named sheet columns, adding headers for any that don't exist yet.
+
+    Existing values in those columns are overwritten; all other columns are left untouched. The df index must be the
+    0-based data row from the sheet (sheet row = index + 2), as returned by GSheetLoader.
+
+    Args:
+        gsheets_client (pygsheets.Client): Authorized client, e.g. GSheetLoader.gsheets_client.
+        sheet_id (str): The spreadsheet key.
+        df (pd.DataFrame): Data containing the fields to write.
+        fields (list[str]): Column names to write; used as the sheet header names.
+        worksheet_index (int): Index of the worksheet to write to. Defaults to 0.
+    """
+    module_logger = logging.getLogger(config.SKID_NAME)
+    worksheet = gsheets_client.open_by_key(sheet_id).worksheet("index", worksheet_index)
+
+    header = [name.strip() for name in worksheet.get_row(1, include_tailing_empty=False)]
+    header += [field for field in fields if field not in header]
+    if len(header) > worksheet.cols:
+        worksheet.add_cols(len(header) - worksheet.cols)
+
+    output = df[fields].reindex(range(df.index.max() + 1)).astype(object)
+    output = output.where(output.notna(), "")
+    last_row = len(output) + 1
+
+    for field in fields:
+        column = header.index(field) + 1
+        cell_range = f"{format_addr((1, column))}:{format_addr((last_row, column))}"
+        worksheet.update_values(cell_range, [[field]] + [[value] for value in output[field].tolist()])
+
+    module_logger.info(f"Wrote {fields} for {len(output)} rows to worksheet '{worksheet.title}'")
+
+
 def process():
     """The main function that does all the work."""
 
@@ -239,8 +272,7 @@ def process():
         module_logger.info("Reading in data from Google Sheets")
         # credentials, _ = google_auth_default() # error
         credentials, _ = google_auth_default(
-    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-) # error, needs quota project?
+                            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]) # error, needs quota project?
         # loader = extract.GSheetLoader(credentials) 
         
         loader = extract.GSheetLoader(Path(__file__).parent / "secrets" / "sheets-sa.json") # works
@@ -267,9 +299,16 @@ def process():
                                          wkid =4326,
                                          acceptScore=90)
 
-        #: OVERWRITE / TRUNCATE AND LOAD DATA
-        
+        sheet_fields = ["website_status", "x", "y", "score", "match_address"]
+        _write_columns_to_sheet(
+            loader.gsheets_client,
+            secrets.SHEET_ID,
+            geocoded_df.rename(columns={"matchAddress": "match_address"}),
+            sheet_fields,
+        )
 
+
+        #: OVERWRITE / TRUNCATE AND LOAD DATA
         # TODO: TRUNCATE DATA COLUMNS 
 
         opts = geocoded_df["Opts_In_OUT"]
