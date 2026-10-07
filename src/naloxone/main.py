@@ -174,6 +174,48 @@ def _check_links(df, url_field="Org website", status_field="website_status", max
 
     return df
 
+
+def _conform_to_schema(df, schema):
+    """Keep only the schema fields (plus SHAPE) and cast them to the schema types.
+
+    Values that can't be cast are set to null and logged as warnings.
+
+    Args:
+        df (pd.DataFrame): The data to be loaded.
+        schema (dict): Field name -> "str", "int", or "float".
+
+    Returns:
+        pd.DataFrame: The conformed data.
+    """
+    module_logger = logging.getLogger(config.SKID_NAME)
+
+    df = df.rename(columns={"matchAddress": "match_address"})
+
+    missing = [field for field in schema if field not in df.columns]
+    if missing:
+        module_logger.warning(f"Schema fields missing from new data: {missing}")
+
+    extra = [column for column in df.columns if column not in schema and column != "SHAPE"]
+    df = df.drop(columns=extra)
+
+    for field, field_type in schema.items():
+        if field_type not in ("int", "float") or field not in df.columns:
+            continue
+
+        text = df[field].where(df[field].notna(), "").astype(str).str.strip()
+        blank = text.eq("")
+        converted = pd.to_numeric(text.mask(blank), errors="coerce")
+        if field_type == "int":
+            converted = converted.mask(converted % 1 != 0)
+
+        for index, value in text[~blank & converted.isna()].items():
+            module_logger.warning(f"{field}: could not convert {value!r} on row {index} to {field_type}; set to null")
+
+        df[field] = converted.astype("Int64") if field_type == "int" else converted.astype("float64")
+
+    return df
+
+
 def process():
     """The main function that does all the work."""
 
@@ -232,7 +274,7 @@ def process():
 
         opts = geocoded_df["Opts_In_OUT"]
         update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
-        update_df = update_df.rename(columns={"matchAddress": "match_address"})
+        update_df = _conform_to_schema(update_df, config.AGOL_SCHEMA)
         module_logger.info(f"{len(update_df)} rows have a blank Opts In/Out value")
 
         updated_count = 0
