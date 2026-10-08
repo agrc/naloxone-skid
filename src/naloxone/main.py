@@ -307,12 +307,9 @@ def process():
         gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
 
         module_logger.info("Reading in data from Google Sheets")
-        # credentials, _ = google_auth_default() # error
-        credentials, _ = google_auth_default(
-                            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]) # error, needs quota project?
-        # loader = extract.GSheetLoader(credentials) 
+        credentials, _ = google_auth_default() 
+        loader = extract.GSheetLoader(credentials) 
         
-        loader = extract.GSheetLoader(Path(__file__).parent / "secrets" / "sheets-sa.json") # works
         df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
 
         n_rows, n_columns = df.shape
