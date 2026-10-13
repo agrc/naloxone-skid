@@ -5,21 +5,21 @@ Run the SKIDNAME script as a Cloud Run Job or console entry point.
 import json
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 import arcgis
-import requests
-from pygsheets.utils import format_addr
-from google.auth import default as google_auth_default
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
-from palletjack import extract, load, transform, utils
+import requests
+from google.auth import default as google_auth_default
+from palletjack import extract, load, transform
+from pygsheets.utils import format_addr
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
-from urllib.parse import urlparse
 
 from naloxone import __version__
 
