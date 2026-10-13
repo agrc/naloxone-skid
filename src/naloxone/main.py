@@ -354,6 +354,7 @@ def process():
         if not update_df.empty:
             overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=tempdir_path)
             overwriter.truncate_and_load(update_df, save_old=True)
+            updated_count = len(update_df)
             module_logger.info(f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}.")
 
 
