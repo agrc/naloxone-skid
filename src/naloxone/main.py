@@ -321,7 +321,7 @@ def process():
         geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
 
         #: Geocode 
-        #: drop pervious geocode fields if they exist
+        #: drop previous geocode fields if they exist
         df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors='ignore')
         module_logger.info("Dropped previous geocode fields if they existed")
         df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
