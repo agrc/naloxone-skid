@@ -5,21 +5,21 @@ Run the SKIDNAME script as a Cloud Run Job or console entry point.
 import json
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 import arcgis
-import requests
-from pygsheets.utils import format_addr
-from google.auth import default as google_auth_default
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
-from palletjack import extract, load, transform, utils
+import requests
+from google.auth import default as google_auth_default
+from palletjack import extract, load, transform
+from pygsheets.utils import format_addr
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
-from urllib.parse import urlparse
 
 from naloxone import __version__
 
@@ -321,7 +321,7 @@ def process():
         geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
 
         #: Geocode 
-        #: drop pervious geocode fields if they exist
+        #: drop previous geocode fields if they exist
         df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors='ignore')
         module_logger.info("Dropped previous geocode fields if they existed")
         df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
@@ -354,6 +354,7 @@ def process():
         if not update_df.empty:
             overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=tempdir_path)
             overwriter.truncate_and_load(update_df, save_old=True)
+            updated_count = len(update_df)
             module_logger.info(f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}.")
 
 
