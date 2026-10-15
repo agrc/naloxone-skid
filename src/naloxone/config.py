@@ -7,7 +7,7 @@ import socket
 import urllib.request
 from urllib.error import URLError
 
-SKID_NAME = ""
+SKID_NAME = "naloxone-skid"
 
 try:
     url = "http://metadata.google.internal/computeMetadata/v1/project/project-id"
@@ -30,8 +30,25 @@ SENDGRID_SETTINGS = {  #: Settings for SendGridHandler
 LOG_LEVEL = logging.DEBUG
 LOG_FILE_NAME = "log"
 
-FEATURE_LAYER_ITEMID = ""
 JOIN_COLUMN = ""
 ATTACHMENT_LINK_COLUMN = ""
 ATTACHMENT_PATH_COLUMN = ""
-FIELDS = {}
+#: Field name -> type ("str", "int", or "float"); must match the live AGOL layer
+AGOL_SCHEMA = {
+    "Opts_In_OUT": "str",
+    "Organization_Name": "str",
+    "Provides_FTS_XTS_Yes_No": "str",
+    "Organization_Type": "str",
+    "Address": "str",
+    "City": "str",
+    "Zip_Code": "int",
+    "Org_Phone_Number": "str",
+    "Org_website": "str",
+    "Org_hours_of_operation": "str",
+    "website_status": "str",
+    "x": "float",
+    "y": "float",
+    "score": "float",
+    "match_address": "str",
+    "geocode_status": "str",
+}
