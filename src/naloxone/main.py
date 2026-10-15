@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -142,6 +142,7 @@ def _check_url(session, url, timeout=10):
         return f"An error occurred: {response.status_code}"
     return "Valid"
 
+
 def _check_links(df, url_field="Org website", status_field="website_status", max_workers=10):
     """Check the status of URLs in a DataFrame.
 
@@ -272,13 +273,15 @@ def _write_columns_to_sheet(gsheets_client, sheet_id, df, fields, worksheet_inde
             rows.append({"values": [{"userEnteredFormat": cell_format}]})
 
         if rows:
-            format_requests.append({
-                "updateCells": {
-                    "start": {"sheetId": worksheet.id, "rowIndex": 1, "columnIndex": header.index(field)},
-                    "rows": rows,
-                    "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.backgroundColorStyle",
+            format_requests.append(
+                {
+                    "updateCells": {
+                        "start": {"sheetId": worksheet.id, "rowIndex": 1, "columnIndex": header.index(field)},
+                        "rows": rows,
+                        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.backgroundColorStyle",
+                    }
                 }
-            })
+            )
 
     if format_requests:
         gsheets_client.sheet.batch_update(sheet_id, format_requests)
@@ -290,7 +293,7 @@ def process():
     """The main function that does all the work."""
 
     #: Set up secrets, tempdir, supervisor, and logging
-    start = datetime.now(timezone.utc)
+    start = datetime.now(UTC)
 
     secrets = SimpleNamespace(**_get_secrets())
 
@@ -307,9 +310,9 @@ def process():
         gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
 
         module_logger.info("Reading in data from Google Sheets")
-        credentials, _ = google_auth_default() 
-        loader = extract.GSheetLoader(credentials) 
-        
+        credentials, _ = google_auth_default()
+        loader = extract.GSheetLoader(credentials)
+
         df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
 
         n_rows, n_columns = df.shape
@@ -320,18 +323,16 @@ def process():
 
         geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
 
-        #: Geocode 
+        #: Geocode
         #: drop previous geocode fields if they exist
-        df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors='ignore')
+        df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors="ignore")
         module_logger.info("Dropped previous geocode fields if they existed")
         df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
         module_logger.info("Geocoding locations")
         geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY)
-        geocoded_df = geocoder.geocode_dataframe(df,
-                                         street_col="Address",
-                                         zone_col="Zip_Code",
-                                         wkid =4326,
-                                         acceptScore=70)
+        geocoded_df = geocoder.geocode_dataframe(
+            df, street_col="Address", zone_col="Zip_Code", wkid=4326, acceptScore=70
+        )
 
         sheet_fields = ["website_status", "x", "y", "score", "match_address"]
         _write_columns_to_sheet(
@@ -341,9 +342,8 @@ def process():
             sheet_fields,
         )
 
-
         #: OVERWRITE / TRUNCATE AND LOAD DATA
-        # TODO: TRUNCATE DATA COLUMNS 
+        # TODO: TRUNCATE DATA COLUMNS
 
         opts = geocoded_df["Opts_In_OUT"]
         update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
@@ -355,10 +355,11 @@ def process():
             overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=tempdir_path)
             overwriter.truncate_and_load(update_df, save_old=True)
             updated_count = len(update_df)
-            module_logger.info(f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}.")
+            module_logger.info(
+                f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}."
+            )
 
-
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
 
         summary_message = MessageDetails()
         summary_message.subject = "Update Summary"
