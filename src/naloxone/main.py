@@ -331,7 +331,12 @@ def process():
         module_logger.info("Geocoding locations")
         geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY)
         geocoded_df = geocoder.geocode_dataframe(
-            df, street_col="Address", zone_col="Zip_Code", wkid=4326, acceptScore=70
+            df,
+            street_col="Address",
+            zone_col="Zip_Code",
+            wkid=4326,
+            acceptScore=70,
+            api_args={"headers": {"Referer": secrets.URL_TEMPLATE}},
         )
 
         sheet_fields = ["website_status", "x", "y", "score", "match_address"]
