@@ -192,6 +192,14 @@ def _conform_to_schema(df, schema):
 
     df = df.rename(columns={"matchAddress": "match_address"})
 
+    address_fields = ("Address_1", "Address_2")
+    if any(field in df.columns for field in address_fields):
+        address_parts = [
+            df[field].fillna("").astype(str).str.strip() if field in df.columns else pd.Series("", index=df.index)
+            for field in address_fields
+        ]
+        df["Address"] = address_parts[0].str.cat(address_parts[1], sep=" ").str.strip()
+
     missing = [field for field in schema if field not in df.columns]
     if missing:
         module_logger.warning(f"Schema fields missing from new data: {missing}")
@@ -332,7 +340,7 @@ def process():
         geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY, referrer=secrets.URL_TEMPLATE)
         geocoded_df = geocoder.geocode_dataframe(
             df,
-            street_col="Address",
+            street_col="Address_1",
             zone_col="Zip_Code",
             wkid=4326,
             acceptScore=70,
@@ -347,8 +355,6 @@ def process():
         )
 
         #: OVERWRITE / TRUNCATE AND LOAD DATA
-        # TODO: TRUNCATE DATA COLUMNS
-
         opts = geocoded_df["Opts_In_OUT"]
         update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
         update_df = _conform_to_schema(update_df, config.AGOL_SCHEMA)
