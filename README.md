@@ -1,86 +1,46 @@
-# UGRC Palletjack Skid Starter Template
+# naloxone-skid
 
-[![Push Events](https://github.com/agrc/skid/actions/workflows/push.yml/badge.svg)](https://github.com/agrc/skid/actions/workflows/push.yml)
+[![Release Events](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml)
+[![Push Events](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml)
 
-A template for building skids that use palletjack to update AGOL data from a tabular data source and that are run as Google Cloud Run Jobs
+This skid maintains an ArcGIS Online feature layer of organizations that provide naloxone-related services. It reads organization information from a Google Sheet, checks website URLs, geocodes addresses, writes the website and geocoding results back to the sheet, and loads eligible records into AGOL.
 
-For an example of a working skid, see [nfhl-skid](https://github.com/agrc/nfhl-skid) or [uocc-skid](https://github.com/agrc/uocc-skid).
+This skid is executed on demand by VIPP employees via a via Google Apps Scripts deployment addon. VIPP team manages the source data in a Google Sheet in a shared drive.
 
-## Creating a Git Repository
+## Running a sheet deployment
 
-The first step in creating a skid is to create a new repository in GitHub that uses this repo as a template. You'll then clone the repo to your computer and start developing.
+Use the Google Sheets deployment add-on to request an on-demand run of the deployed skid after updating the source spreadsheet. This is accessible via the "Deployment" menu -> "Deploy Configs to..." item in both of the config spreadsheets. The add-on triggers the data sync; it is separate from deploying a new version of the skid.
 
-See [this answer](https://stackoverflowteams.com/c/ugrc/a/185/7) on our Stack Overflow for GitHub repo creation via Terraform (the preferred way).
+An example script and json config can be found in the src/apps-script directory.
 
-## Initial Skid Development
+Note that the Apps Scripts GCP project needs to be pointed at the same GCP project as the hosting project.
 
-You'll need to do a few steps to set up your environment to develop a skid. You may also want to make sure you've got the skid working locally before adding the complexity of the cloud function.
+To grant someone access to be able to use the deploy script, add them to the "gcp-dts-ugrc-deq-enviro-admins@utah.gov" google group.
 
-This all presumes you're working in Visual Studio Code.
+The [DEQ Enviro config spreadsheet deploy add-on](https://github.com/agrc/deq-enviro#config-spreadsheet-deploy-addon) is a reference for this spreadsheet-driven deployment pattern.
 
-1. Create new environment for the project and install Python
-   - `conda create --name PROJECT_NAME python=3.13`
-   - `conda activate PROJECT_NAME`
-1. Open the repo folder in VS Code
-1. Rename `src/skidname` folder to your desired skid name
-1. Edit the project metadata in `pyproject.toml` to reflect your new skid name
-1. Edit the `test_skidname.py` to match your skid name.
-   - You will have one `test_filename.py` file for each program file in your `src` directory and you will write tests for the specific file in the `test_filename.py` file
-1. Reset the version to 1.0.0 in `pyproject.toml`
-1. Install the skid in your conda environment as an editable package for development
-   - This will install all the normal and development dependencies (palletjack, supervisor, etc)
-   - `cd c:\path\to\repo`
-   - `pip install -e .[dev]`
-   - add any additional project requirements to the `project.dependencies` list in `pyproject.toml`
-1. Set config variables and secrets
-   - `secrets.json` holds passwords, secret keys, etc, and will not (and should not) be tracked in git
-   - `config.py` holds all the other configuration variables that can be publicly exposed in git
-   - Copy `secrets_template.json` to `secrets.json` and change/add whatever values are needed for your skid
-   - Change/add variables in `config.py` as needed
-1. Write your skid-specific code inside `process()` in `main.py`
-   - If it makes your code cleaner, you can write other methods and call them within `process()`
-   - Any `print()` statements should instead use `module_logger.info/debug`. The loggers set up in the `_initialize()` method will write to both standard out (the terminal) and to a log file.
-   - Add any captured statistics (number of rows updated, etc) to the `summary_rows` list near the end of `process()` to add them to the email message summary (the log file is already included as an attachment)
-1. Run the tests in VS Code
-   - Testing -> Run Tests
+## Runtime Environment
+`naloxone-skid` runs as a Google Cloud Run Job and can also be run locally for development. GitHub Actions builds and deploys the container to the dev project when changes are pushed to `dev`, and deploys to production when a release is published. The container image is stored in Artifact Registry, and the job reads its secrets from Secret Manager.
 
-## Running it as a Google Cloud Run Job
+The skid is started on demand from the Google Sheets deployment add-on; it does not use a Cloud Scheduler job. The GCP project must have the Cloud Run Job, Artifact Registry repository, Secret Manager secret (`skid-secrets`), and the service accounts and Workload Identity Federation permissions used by GitHub Actions and Cloud Run. The Apps Script GCP project must be the same project as the one hosting the skid.
 
-### Setup Cloud Dev/Prod Environments in Google Cloud Platform
-
-Skids run as Cloud Run Jobs triggered by Cloud Scheduler on a regular schedule.
-
-Cloud Run jobs run in a Docker container built using the project's `Dockerfile`. The GitHub deploy action in `.github/actions/deploy/action.yml` handles creating the container, setting the container's resource limits, and setting up Cloud Scheduler. It uses the following GitHub secrets to do this, which should all be set as part of the Terraform repo creation:
-
-- Identity provider
-- GCP service account email
-- Project ID
-- Storage Bucket ID
-
-Work with the GCP maestros to set up a Google project via terraform. They can use the uocc configuration as a starting point. Skids use some or all of the following GCP resources:
-
-- Cloud Functions (executes the python)
-- Cloud Storage (writing the data files and log files for mid-term retention)
-  - Set a data retention policy on the storage bucket for file rotation (90 days is good for a weekly process)
-- Cloud Scheduler (sends a notification to a pub/sub topic)
-- Cloud Pub/Sub (creates a topic that links Scheduler and the cloud function)
-- Secret Manager
-  - A `secrets.json` with the requisite login info
-  - A `known_hosts` file (for loading from sftp) or a service account private key file (for loading from Google Sheets)
-
-### Running Locally
-
-Because the Docker container is just `pip install`ing your module and running the entry point defined in `pyproject.toml`, you can generally run your code locally by doing the same (it should already be installed in your conda environment in the development steps listed above). You can run it via VS Code's debugger as well running it as a module. A `.main` entry point is predefined in `.vscode/launch.json` (be sure to update `skidname` to match the folder name under `/src`).
-
-To test it in the Docker container's environment, you can run use the `Dockerfile` to create a container and run it locally using a tool like [Podman](https://podman.io/).
-
-### Handling Secrets and Configuration Files
-
-Skids use GCP Secrets Manager to make secrets available to the function. They are mounted as local files with a specified mounting directory (`/secrets`). In this mounting scheme, a folder can only hold a single secret, so multiple secrets are handled via nesting folders (ie, `/secrets/app` and `secrets/ftp`). These mount points are specified in the GitHub CI action workflow.
-
-The `secrets.json` folder holds all the login info, etc. A template is available in the repo's root directory. This is read into a dictionary with the `json` package via the `_get_secrets()` function. Other files (`known_hosts`, service account keys) can be handled in a similar manner or just have their path available for direct access.
+## Running Locally
+Use Python 3.13, matching the version used to build the Cloud Run container. Clone the repository, then create the local secrets file. For local development, the `secrets.json` file holds all the login info, etc. A template is available in the repo's root directory. 
 
 A separate `config.py` module holds non-secret configuration values. These are accessed by importing the module and accessing them directly.
+
+```powershell
+Copy-Item src\naloxone\secrets\secrets_template.json src\naloxone\secrets\secrets.json
+```
+From PowerShell at the repository root:
+
+1. Create a virtual environment: `py -3.13 -m venv .venv`
+2. Activate it: `.\.venv\Scripts\Activate.ps1`
+3. Install the package and development dependencies: `python -m pip install -e ".[dev]"`
+4. Authenticate to Google Sheets with application-default credentials: `gcloud auth application-default login  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/drive" `
+5. Run the skid: `naloxone`
+
+To run the tests, use `python -m pytest`.
 
 ## Attribution
 
