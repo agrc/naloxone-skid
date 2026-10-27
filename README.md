@@ -34,8 +34,8 @@ Copy-Item src\naloxone\secrets\secrets_template.json src\naloxone\secrets\secret
 ```
 From PowerShell at the repository root:
 
-1. Create a virtual environment: `py -3.13 -m venv .venv`
-2. Activate it: `.\.venv\Scripts\Activate.ps1`
+1. Create a Conda environment: `conda create --name naloxone-skid python=3.13 pip`
+2. Activate it: `conda activate naloxone-skid`
 3. Install the package and development dependencies: `python -m pip install -e ".[dev]"`
 4. Authenticate to Google Sheets with application-default credentials: `gcloud auth application-default login  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/drive" `
 5. Run the skid: `naloxone`
