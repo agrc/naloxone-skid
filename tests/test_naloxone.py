@@ -60,6 +60,15 @@ def test_check_url_returns_http_error_status(mocker):
     session.get.assert_not_called()
 
 
+def test_check_url_returns_invalid_url_for_malformed_bracket(mocker):
+    session = mocker.Mock()
+
+    result = main._check_url(session, "https://[broken")
+
+    assert result == "Failed to connect. The URL might be invalid or the site may be down."
+    session.head.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("exception", "expected"),
     [
