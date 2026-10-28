@@ -116,7 +116,12 @@ def _remove_log_file_handlers(log_name, loggers):
 def _check_url(session, url, timeout=10):
 
     url = str(url).strip()
-    if not urlparse(url).scheme:
+    try:
+        has_scheme = bool(urlparse(url).scheme)
+    except ValueError:
+        return "Failed to connect. The URL might be invalid or the site may be down."
+
+    if not has_scheme:
         url = f"https://{url}"
 
     try:
