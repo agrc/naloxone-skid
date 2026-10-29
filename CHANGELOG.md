@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.0 (2026-10-29)
+
+
+### Features
+
+* add conditional formatting for Google Sheets output based on validation scores ([13023e7](https://github.com/agrc/naloxone-skid/commit/13023e7d3bbb9ef2f7600ad71dd76a98f593b6eb))
+* add function to write DataFrame columns to Google Sheets ([96b4e1a](https://github.com/agrc/naloxone-skid/commit/96b4e1a8960f071901db27476881b7b1d5a7347c))
+* add URL checking and geocoding functionality in main.py ([2c408c5](https://github.com/agrc/naloxone-skid/commit/2c408c52b1b00c9106c4ff800895eea7768a61e8))
+* Log updated feature count after overwriting ([0ff44a1](https://github.com/agrc/naloxone-skid/commit/0ff44a1414c7a100d1e30c5144ec83817ba3cad6))
+* update AGOL schema and implement data conformance function in main.py ([363c170](https://github.com/agrc/naloxone-skid/commit/363c17090b33c928642e02b4acdd6a4fba59530a))
+
+
+### Bug Fixes
+
+* correct entrypoint name in Dockerfile ([f41f161](https://github.com/agrc/naloxone-skid/commit/f41f161faf4eb2b22b150ad26cb3eae768f20be6))
+* improve URL validation to handle malformed URLs and return appropriate error messages ([dcb1f21](https://github.com/agrc/naloxone-skid/commit/dcb1f21d55b10a9e50f8a220478c14e844f6b86b))
+* include referrer in geocoder initialization for improved API call ([e9d9ac1](https://github.com/agrc/naloxone-skid/commit/e9d9ac191e8c8311d62c20a7239aae7789225cab))
+* update AGOL schema by removing unused fields and adjust address concatenation logic ([54ef04c](https://github.com/agrc/naloxone-skid/commit/54ef04ccbf1703cf78501009e2e068e0e76b6a9e))
+* update datetime usage and improve formatting in main.py ([c137c09](https://github.com/agrc/naloxone-skid/commit/c137c09acd6562566c87e16f0bd9679f20646275))
+* update datetime usage to use UTC and improve formatting in main.py ([cdf095a](https://github.com/agrc/naloxone-skid/commit/cdf095aa82a29693adf67571cdfa9f48cabe44fa))
+* update entrypoint name in Dockerfile ([4c4db7d](https://github.com/agrc/naloxone-skid/commit/4c4db7d4a5f42ca12b82f43f5dd6fd2bdcff3bf8))
+* update geocoding API call to include Referer header and add new words to cSpell dictionary ([8859a7a](https://github.com/agrc/naloxone-skid/commit/8859a7ac42cc4f57bf8e5d1219d9935e53eb3fc3))
+* update Google Sheets credentials for local and adjust URL field for link checking ([93662de](https://github.com/agrc/naloxone-skid/commit/93662de66fbb6d5cb44c2ad454e0d404c0f9c8ad))
+* update Google Sheets loader to use Google Auth credentials ([a651c3d](https://github.com/agrc/naloxone-skid/commit/a651c3da8532aac3a38b971fa2395bc9965eeee9))
+* update package name in version retrieval in __init__.py ([2b6e3c0](https://github.com/agrc/naloxone-skid/commit/2b6e3c06c116289c8d956fec74c3f39c8c31eccc))
+
+
+### Dependencies
+
+* update dependencies for ugrc-palletjack to version 6.1 ([a9f0252](https://github.com/agrc/naloxone-skid/commit/a9f0252a78ab22e0dea00ab8df5d7e5f7f3959b0))
+
+
+### Documentation
+
+* update readme and secrets template to include additional configuration fields ([619eb33](https://github.com/agrc/naloxone-skid/commit/619eb33cf12b1a166c11554bc0d89922705e2020))
+* update README to reflect Conda environment setup instructions ([858bda0](https://github.com/agrc/naloxone-skid/commit/858bda0968ab9acbe942086e46c3e2eac7fa657b))
+
 ## [1.0.1](https://github.com/agrc/skid/compare/v1.0.0...v1.0.1) (2026-01-29)
 
 
