@@ -214,7 +214,12 @@ def _conform_to_schema(df, schema):
     df = df.drop(columns=extra)
 
     for field, field_type in schema.items():
-        if field_type not in ("int", "float") or field not in df.columns:
+        if field not in df.columns:
+            continue
+        if field_type == "str":
+            df[field] = df[field].astype("string")
+            continue
+        if field_type not in ("int", "float"):
             continue
 
         text = df[field].where(df[field].notna(), "").astype(str).str.strip()
