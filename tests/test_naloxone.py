@@ -143,6 +143,32 @@ def test_load_sheet_for_agol_uses_saved_coordinates(mocker):
     assert from_xy.call_args.kwargs == {"sr": 4326}
 
 
+def test_load_sheet_for_agol_publishes_rows_without_valid_geometry(mocker):
+    source = pd.DataFrame(
+        {
+            "Organization_Name": ["Origin", "Blank", "Non-numeric", "Out of range", "Valid"],
+            "x": ["0", "", "invalid", "181", "-111.94"],
+            "y": ["0", "40.77", "40.77", "40.77", "40.77"],
+        }
+    )
+    loader = mocker.Mock()
+    loader.load_specific_worksheet_into_dataframe.return_value = source
+    mocker.patch.object(main.transform.DataCleaning, "rename_dataframe_columns_for_agol", side_effect=lambda df: df)
+
+    def from_xy(df, x_column, y_column, sr):
+        result = df.copy()
+        result["SHAPE"] = list(zip(result[x_column], result[y_column]))
+        return result
+
+    mocker.patch.object(pd.DataFrame, "spatial", SimpleNamespace(from_xy=from_xy))
+
+    result = main._load_sheet_for_agol(loader, "sheet-id")
+
+    assert result["Organization_Name"].tolist() == source["Organization_Name"].tolist()
+    assert result["SHAPE"].iloc[:4].tolist() == [None] * 4
+    assert result["SHAPE"].iloc[4] == (-111.94, 40.77)
+
+
 def test_load_sheet_for_agol_requires_prepared_coordinates(mocker):
     loader = mocker.Mock()
     loader.load_specific_worksheet_into_dataframe.return_value = pd.DataFrame({"Organization_Name": ["Organization"]})

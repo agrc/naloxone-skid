@@ -347,15 +347,23 @@ def _load_sheet_for_agol(loader, sheet_id):
     if missing:
         raise ValueError(f"Cannot publish before sheet preparation; missing geocoding fields: {missing}")
 
-    for field in ("x", "y"):
-        converted = pd.to_numeric(df[field], errors="coerce")
-        invalid = converted.isna()
-        if invalid.any():
-            sheet_rows = [index + 2 for index in df.index[invalid]]
-            raise ValueError(f"Cannot publish; {field} is blank or non-numeric on sheet rows {sheet_rows}")
-        df[field] = converted
+    coordinates = pd.DataFrame({field: pd.to_numeric(df[field], errors="coerce") for field in ("x", "y")})
+    valid = (
+        coordinates["x"].between(-180, 180)
+        & coordinates["y"].between(-90, 90)
+        & ~(coordinates["x"].eq(0) & coordinates["y"].eq(0))
+    )
+    invalid_count = (~valid).sum()
+    if invalid_count:
+        module_logger = logging.getLogger(config.SKID_NAME)
+        module_logger.warning(f"{invalid_count} rows have invalid coordinates; publishing without point geometry")
 
-    return pd.DataFrame.spatial.from_xy(df, "x", "y", sr=4326)
+    df[["x", "y"]] = coordinates
+    geometry_df = df.copy()
+    geometry_df.loc[~valid, ["x", "y"]] = 0
+    spatial_df = pd.DataFrame.spatial.from_xy(geometry_df, "x", "y", sr=4326)
+    spatial_df.loc[~valid, "SHAPE"] = None
+    return spatial_df
 
 
 def _publish_sheet(loader, secrets, working_dir):
