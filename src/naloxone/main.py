@@ -2,6 +2,7 @@
 Run the SKIDNAME script as a Cloud Run Job or console entry point.
 """
 
+import argparse
 import json
 import logging
 import sys
@@ -302,8 +303,84 @@ def _write_columns_to_sheet(gsheets_client, sheet_id, df, fields, worksheet_inde
     module_logger.info(f"Wrote {fields} for {len(output)} rows to worksheet '{worksheet.title}'")
 
 
-def process():
-    """The main function that does all the work."""
+def _prepare_sheet(loader, secrets):
+    """Check links, geocode the source sheet, and write results back without loading AGOL."""
+    module_logger = logging.getLogger(config.SKID_NAME)
+    df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
+
+    n_rows, n_columns = df.shape
+    module_logger.info(f"Loaded sheet with {n_rows} rows and {n_columns} columns")
+
+    df = _check_links(df, url_field="Org website", status_field="website_status")
+
+    geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
+    df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors="ignore")
+    module_logger.info("Dropped previous geocode fields if they existed")
+    df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
+
+    module_logger.info("Geocoding locations")
+    geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY, referrer=secrets.URL_TEMPLATE)
+    geocoded_df = geocoder.geocode_dataframe(
+        df,
+        street_col="Address_1",
+        zone_col="Zip_Code",
+        wkid=4326,
+        acceptScore=70,
+    )
+
+    sheet_fields = ["website_status", "x", "y", "score", "match_address"]
+    _write_columns_to_sheet(
+        loader.gsheets_client,
+        secrets.SHEET_ID,
+        geocoded_df.rename(columns={"matchAddress": "match_address"}),
+        sheet_fields,
+    )
+    return len(geocoded_df)
+
+
+def _load_sheet_for_agol(loader, sheet_id):
+    """Build the spatial dataframe for AGOL from geocoding results already saved in the sheet."""
+    df = loader.load_specific_worksheet_into_dataframe(sheet_id, 0)
+    df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
+
+    missing = [field for field in ("x", "y") if field not in df.columns]
+    if missing:
+        raise ValueError(f"Cannot publish before sheet preparation; missing geocoding fields: {missing}")
+
+    for field in ("x", "y"):
+        converted = pd.to_numeric(df[field], errors="coerce")
+        invalid = converted.isna()
+        if invalid.any():
+            sheet_rows = [index + 2 for index in df.index[invalid]]
+            raise ValueError(f"Cannot publish; {field} is blank or non-numeric on sheet rows {sheet_rows}")
+        df[field] = converted
+
+    return pd.DataFrame.spatial.from_xy(df, "x", "y", sr=4326)
+
+
+def _publish_sheet(loader, secrets, working_dir):
+    """Load the saved sheet data into AGOL without checking links or geocoding."""
+    module_logger = logging.getLogger(config.SKID_NAME)
+    df = _load_sheet_for_agol(loader, secrets.SHEET_ID)
+    update_df = _conform_to_schema(df, config.AGOL_SCHEMA)
+    module_logger.info(f"{len(update_df)} rows are ready to load to AGOL")
+
+    if update_df.empty:
+        return 0
+
+    gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
+    overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=working_dir)
+    overwriter.truncate_and_load(update_df, save_old=True)
+    module_logger.info(f"Overwrote {len(update_df)} features to AGOL Feature Layer. Backup saved in {working_dir}.")
+    return len(update_df)
+
+
+def process(mode=None):
+    """Run sheet preparation, AGOL publishing, or both in sequence."""
+    if mode is None:
+        mode = _parse_mode()
+    if mode not in ("all", "prepare", "publish"):
+        raise ValueError(f"Unsupported mode {mode!r}; expected 'all', 'prepare', or 'publish'")
 
     #: Set up secrets, tempdir, supervisor, and logging
     start = datetime.now(UTC)
@@ -319,63 +396,26 @@ def process():
         module_logger = logging.getLogger(config.SKID_NAME)
         module_logger.info(f"Starting {config.SKID_NAME} version {__version__}")
 
-        #: Get our GIS object via the ArcGIS API for Python
-        gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
-
-        module_logger.info("Reading in data from Google Sheets")
         credentials, _ = google_auth_default()
         loader = extract.GSheetLoader(credentials)
 
-        df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 0)
-
-        n_rows, n_columns = df.shape
-        module_logger.info(f"Loaded sheet with {n_rows} rows and {n_columns} columns")
-
-        #: Check website URLs
-        df = _check_links(df, url_field="Org website", status_field="website_status")
-
-        geocode_fields = ["x", "y", "score", "match_address", "geocode_status"]
-
-        #: Geocode
-        #: drop previous geocode fields if they exist
-        df = df.drop(columns=[col for col in geocode_fields if col in df.columns], errors="ignore")
-        module_logger.info("Dropped previous geocode fields if they existed")
-        df = transform.DataCleaning.rename_dataframe_columns_for_agol(df)
-        module_logger.info("Geocoding locations")
-        geocoder = transform.APIGeocoder(api_key=secrets.GEOCODING_API_KEY, referrer=secrets.URL_TEMPLATE)
-        geocoded_df = geocoder.geocode_dataframe(
-            df,
-            street_col="Address_1",
-            zone_col="Zip_Code",
-            wkid=4326,
-            acceptScore=70,
-        )
-
-        sheet_fields = ["website_status", "x", "y", "score", "match_address"]
-        _write_columns_to_sheet(
-            loader.gsheets_client,
-            secrets.SHEET_ID,
-            geocoded_df.rename(columns={"matchAddress": "match_address"}),
-            sheet_fields,
-        )
-
-        #: OVERWRITE / TRUNCATE AND LOAD DATA
-        update_df = _conform_to_schema(geocoded_df, config.AGOL_SCHEMA)
-        module_logger.info(f"{len(update_df)} rows are ready to load to AGOL")
-
-        updated_count = 0
-        if not update_df.empty:
-            overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=tempdir_path)
-            overwriter.truncate_and_load(update_df, save_old=True)
-            updated_count = len(update_df)
-            module_logger.info(
-                f"Overwrote {updated_count} features to AGOL Feature Layer. Backup saved in {tempdir_path}."
-            )
+        prepared_count = None
+        updated_count = None
+        if mode in ("all", "prepare"):
+            module_logger.info("Preparing Google Sheet data")
+            prepared_count = _prepare_sheet(loader, secrets)
+        if mode in ("all", "publish"):
+            module_logger.info("Publishing saved Google Sheet data to AGOL")
+            updated_count = _publish_sheet(loader, secrets, tempdir_path)
 
         end = datetime.now(UTC)
 
         summary_message = MessageDetails()
-        summary_message.subject = "Update Summary"
+        summary_message.subject = {
+            "all": "Update Summary",
+            "prepare": "Sheet Preparation Summary",
+            "publish": "AGOL Publish Summary",
+        }[mode]
         summary_rows = [
             f"{config.SKID_NAME} update {start.strftime('%Y-%m-%d')}",
             "=" * 20,
@@ -383,10 +423,11 @@ def process():
             f"Start time: {start.strftime('%H:%M:%S')}",
             f"End time: {end.strftime('%H:%M:%S')}",
             f"Duration: {end - start!s}",
-            f"Features updated: {updated_count}",
-            #: Add other rows here containing summary info captured/calculated during the working portion of the skid,
-            #: like the number of rows updated or the number of successful attachment overwrites.
         ]
+        if prepared_count is not None:
+            summary_rows.append(f"Rows checked and geocoded: {prepared_count}")
+        if updated_count is not None:
+            summary_rows.append(f"Features updated: {updated_count}")
 
         summary_message.message = "\n".join(summary_rows)
         summary_message.attachments = tempdir_path / log_name
@@ -398,6 +439,23 @@ def process():
         _remove_log_file_handlers(log_name, loggers)
 
 
+def _parse_mode(argv=None):
+    """Parse command-line options and return the requested workflow phase."""
+    parser = argparse.ArgumentParser(description="Check and geocode the Google Sheet, then optionally publish to AGOL.")
+    parser.add_argument(
+        "--mode",
+        choices=("all", "prepare", "publish"),
+        default="all",
+        help="Run sheet preparation, AGOL publishing, or both (default: all)",
+    )
+    return parser.parse_args(argv).mode
+
+
+def cli():
+    """Run the workflow phase selected on the command line."""
+    process(_parse_mode())
+
+
 #: Putting this here means you can call the file via `python main.py` and it will run. Useful for pre-GCF testing.
 if __name__ == "__main__":
-    process()
+    cli()

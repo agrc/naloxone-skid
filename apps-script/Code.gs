@@ -7,7 +7,8 @@ const JOB_URL = `https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu("Deployment")
-    .addItem("Update AGOL feature layer.", "callUpdateFunction")
+    .addItem("Check websites and geocode addresses", "callPrepareFunction")
+    .addItem("Publish data to AGOL", "callPublishFunction")
     .addToUi();
 }
 
@@ -24,7 +25,18 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-function callUpdateFunction() {
+function callPrepareFunction() {
+  callUpdateFunction("prepare");
+}
+
+function callPublishFunction() {
+  callUpdateFunction("publish");
+}
+
+function callUpdateFunction(mode) {
+  mode = mode || "all";
+  const action = mode === "prepare" ? "Sheet preparation" : "AGOL publishing";
+
   // Safe UI acquisition
   let ui;
   try {
@@ -40,6 +52,11 @@ function callUpdateFunction() {
     method: "post",
     contentType: "application/json",
     headers: { Authorization: "Bearer " + token },
+    payload: JSON.stringify({
+      overrides: {
+        containerOverrides: [{ args: ["--mode", mode] }],
+      },
+    }),
     muteHttpExceptions: true,
   };
 
@@ -70,7 +87,7 @@ function callUpdateFunction() {
 
   const isSuccess =
     isGcpSuccess || (responseJson && responseJson.success === true);
-  const title = isSuccess ? "Deploy Successful" : "Deploy Unsuccessful";
+  const title = isSuccess ? `${action} Started` : `${action} Failed`;
 
   var htmlOutput = HtmlService.createHtmlOutput(
     '<div style="font-family: sans-serif; padding: 10px;">',
@@ -83,7 +100,7 @@ function callUpdateFunction() {
       "Job execution started.";
 
     htmlOutput.append(
-      '<h4 style="color: #2e7d32;">Data successfully submitted to update AGOL Feature Layer.</h4>',
+      `<h4 style="color: #2e7d32;">${escapeHtml(action)} job started.</h4>`,
     );
     htmlOutput.append(
       `<p><strong>Execution:</strong> <code>${escapeHtml(executionName)}</code></p>`,
@@ -93,7 +110,7 @@ function callUpdateFunction() {
       ? JSON.stringify(responseJson, null, 2)
       : responseText;
     htmlOutput.append(
-      `<h4 style="color: #c62828;">Deployment Error (HTTP ${responseCode})</h4>`,
+      `<h4 style="color: #c62828;">${escapeHtml(action)} request failed (HTTP ${responseCode})</h4>`,
     );
     htmlOutput.append(
       `<pre style="white-space: pre-wrap; background: #f4f4f4; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto;">${escapeHtml(errorDetails)}</pre>`,

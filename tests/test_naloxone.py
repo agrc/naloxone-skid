@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 import requests
@@ -120,6 +122,60 @@ def test_conform_to_schema_keeps_every_record_and_drops_unmapped_columns():
     assert result["Organization_Name"].tolist() == ["Organization 1", "Organization 2"]
     assert len(result) == len(df)
     assert "unmapped_column" not in result.columns
+
+
+def test_load_sheet_for_agol_uses_saved_coordinates(mocker):
+    source = pd.DataFrame({"x": ["-111.94"], "y": ["40.77"]})
+    loader = mocker.Mock()
+    loader.load_specific_worksheet_into_dataframe.return_value = source
+    mocker.patch.object(main.transform.DataCleaning, "rename_dataframe_columns_for_agol", side_effect=lambda df: df)
+    spatial_result = pd.DataFrame({"SHAPE": ["point"]})
+    from_xy = mocker.Mock(return_value=spatial_result)
+    mocker.patch.object(pd.DataFrame, "spatial", SimpleNamespace(from_xy=from_xy))
+
+    result = main._load_sheet_for_agol(loader, "sheet-id")
+
+    assert result is spatial_result
+    from_xy.assert_called_once()
+    spatial_df = from_xy.call_args.args[0]
+    assert spatial_df[["x", "y"]].iloc[0].tolist() == [-111.94, 40.77]
+    assert from_xy.call_args.args[1:] == ("x", "y")
+    assert from_xy.call_args.kwargs == {"sr": 4326}
+
+
+def test_load_sheet_for_agol_requires_prepared_coordinates(mocker):
+    loader = mocker.Mock()
+    loader.load_specific_worksheet_into_dataframe.return_value = pd.DataFrame({"Organization_Name": ["Organization"]})
+    mocker.patch.object(main.transform.DataCleaning, "rename_dataframe_columns_for_agol", side_effect=lambda df: df)
+
+    with pytest.raises(ValueError, match="missing geocoding fields"):
+        main._load_sheet_for_agol(loader, "sheet-id")
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_mode"),
+    [
+        (["naloxone"], "all"),
+        (["naloxone", "--mode", "prepare"], "prepare"),
+        (["naloxone", "--mode", "publish"], "publish"),
+    ],
+)
+def test_cli_runs_requested_mode(argv, expected_mode, mocker, monkeypatch):
+    process = mocker.patch.object(main, "process")
+    monkeypatch.setattr(main.sys, "argv", argv)
+
+    main.cli()
+
+    process.assert_called_once_with(expected_mode)
+
+
+def test_process_without_mode_parses_command_line(mocker):
+    parse_mode = mocker.patch.object(main, "_parse_mode", return_value="invalid")
+
+    with pytest.raises(ValueError, match="Unsupported mode"):
+        main.process()
+
+    parse_mode.assert_called_once_with()
 
 
 def test_geocode_sample_address(mocker):
