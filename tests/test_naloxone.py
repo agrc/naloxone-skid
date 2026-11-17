@@ -107,6 +107,21 @@ def test_check_links_checks_unique_normalized_urls_and_adds_statuses(mocker):
     assert "website_status" not in df.columns
 
 
+def test_conform_to_schema_keeps_every_record_and_drops_unmapped_columns():
+    df = pd.DataFrame(
+        {
+            "Organization_Name": ["Organization 1", "Organization 2"],
+            "unmapped_column": ["value 1", "value 2"],
+        }
+    )
+
+    result = main._conform_to_schema(df, main.config.AGOL_SCHEMA)
+
+    assert result["Organization_Name"].tolist() == ["Organization 1", "Organization 2"]
+    assert len(result) == len(df)
+    assert "unmapped_column" not in result.columns
+
+
 def test_geocode_sample_address(mocker):
     validate_api_key = mocker.patch.object(main.transform.utils.Geocoding, "validate_api_key")
     geocode_addr = mocker.patch.object(

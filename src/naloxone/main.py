@@ -360,10 +360,8 @@ def process():
         )
 
         #: OVERWRITE / TRUNCATE AND LOAD DATA
-        opts = geocoded_df["Opts_In_OUT"]
-        update_df = geocoded_df[opts.isna() | opts.astype(str).str.strip().eq("")]
-        update_df = _conform_to_schema(update_df, config.AGOL_SCHEMA)
-        module_logger.info(f"{len(update_df)} rows have a blank Opts In/Out value")
+        update_df = _conform_to_schema(geocoded_df, config.AGOL_SCHEMA)
+        module_logger.info(f"{len(update_df)} rows are ready to load to AGOL")
 
         updated_count = 0
         if not update_df.empty:

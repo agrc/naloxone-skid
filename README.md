@@ -3,13 +3,13 @@
 [![Release Events](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml)
 [![Push Events](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml)
 
-This skid maintains an ArcGIS Online feature layer of organizations that provide naloxone-related services. It reads organization information from a Google Sheet, checks website URLs, geocodes addresses, writes the website and geocoding results back to the sheet, and loads eligible records into AGOL.
+This skid maintains an ArcGIS Online feature layer of organizations that provide naloxone-related services. It reads organization information from a Google Sheet, checks website URLs, geocodes addresses, writes the website and geocoding results back to the sheet, and loads records into AGOL.
 
 This skid is executed on demand by VIPP employees via a via Google Apps Scripts deployment addon. VIPP team manages the source data in a Google Sheet in a shared drive.
 
 ## Running a sheet deployment
 
-Use the Google Sheets deployment add-on to request an on-demand run of the deployed skid after updating the source spreadsheet. This is accessible via the "Deployment" menu -> "Deploy Configs to..." item in both of the config spreadsheets. The add-on triggers the data sync; it is separate from deploying a new version of the skid.
+Use the Google Sheets deployment add-on to request an on-demand run of the deployed skid after updating the source spreadsheet. This is accessible via the "Deployment" menu -> "Update AGOL Feature Layer." item in both of the config spreadsheets. The add-on triggers the data sync; it is separate from deploying a new version of the skid.
 
 An example script and json config can be found in the src/apps-script directory.
 

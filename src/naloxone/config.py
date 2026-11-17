@@ -36,7 +36,6 @@ ATTACHMENT_PATH_COLUMN = ""
 #: Field name -> type ("str", "int", or "float"); must match the live AGOL layer
 AGOL_SCHEMA = {
     "Organization_Name": "str",
-    "Provides_FTS_XTS_Yes_No": "str",
     "Organization_Type": "str",
     "Address": "str",
     "City": "str",
