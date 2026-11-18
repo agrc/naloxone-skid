@@ -3,7 +3,7 @@
 [![Release Events](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/release.yml)
 [![Push Events](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml/badge.svg)](https://github.com/agrc/naloxone-skid/actions/workflows/push.yml)
 
-This skid maintains an ArcGIS Online feature layer of organizations that provide naloxone-related services. It reads organization information from a Google Sheet, checks website URLs, geocodes addresses, and writes the website and geocoding results back to the sheet. AGOL publishing is a separate step so the sheet can be reviewed and geocoding rerun without replacing the feature layer.
+This skid maintains an ArcGIS Online feature layer of organizations that provide naloxone-related services. It reads organization information from a Google Sheet, checks website URLs, geocodes addresses, writes the website and geocoding results back to the sheet, and loads eligible records into AGOL.
 
 This skid is executed on demand by VIPP employees via a via Google Apps Scripts deployment addon. VIPP team manages the source data in a Google Sheet in a shared drive.
 
@@ -31,7 +31,7 @@ The [DEQ Enviro config spreadsheet deploy add-on](https://github.com/agrc/deq-en
 
 The skid is started on demand from the Google Sheets deployment add-on; it does not use a Cloud Scheduler job. The GCP project must have the Cloud Run Job, Artifact Registry repository, Secret Manager secret (`skid-secrets`), and the service accounts and Workload Identity Federation permissions used by GitHub Actions and Cloud Run. The Apps Script GCP project must be the same project as the one hosting the skid.
 
-The Google account running either Apps Script action must also be authorized to run the Cloud Run Job with execution overrides (`run.jobs.runWithOverrides`), which are used to select the preparation or publishing mode.
+The Google account running either Apps Script action must also be authorized to run the Cloud Run Job with execution overrides (`run.jobs.runWithOverrides`), which are used to select the preparation or publishing mode. 
 
 ## Running Locally
 Use Python 3.13, matching the version used to build the Cloud Run container. Clone the repository, then create the local secrets file. For local development, the `secrets.json` file holds all the login info, etc. A template is available in the repo's root directory. 

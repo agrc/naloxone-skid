@@ -19,7 +19,6 @@ import pandas as pd
 import requests
 from google.auth import default as google_auth_default
 from palletjack import extract, load, transform
-from palletjack import utils as palletjack_utils
 from pygsheets.utils import format_addr
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
