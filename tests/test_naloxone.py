@@ -178,6 +178,100 @@ def test_load_sheet_for_agol_requires_prepared_coordinates(mocker):
         main._load_sheet_for_agol(loader, "sheet-id")
 
 
+def test_save_agol_backup_uploads_private_geodatabase(mocker, tmp_path):
+    gis = mocker.Mock()
+    gis.users.me.username = "user"
+    existing_item = mocker.Mock()
+    existing_item.title = f"{main.config.SKID_NAME} backup old"
+    gis.content.search.return_value = [existing_item]
+    new_item = mocker.Mock()
+    gis.content.folders.get.return_value.add.return_value.result.return_value = new_item
+    backup_gdf = mocker.Mock()
+    mocker.patch.object(main.palletjack_utils, "convert_to_gdf", return_value=backup_gdf)
+    archive_path = str(tmp_path / "naloxone-backup.zip")
+    make_archive = mocker.patch.object(main.shutil, "make_archive", return_value=archive_path)
+
+    backup_item, existing_items = main._save_agol_backup(gis, pd.DataFrame({"SHAPE": [object()]}), tmp_path)
+
+    assert backup_item is new_item
+    assert existing_items == [existing_item]
+    backup_gdf.to_file.assert_called_once_with(
+        tmp_path / "naloxone-backup.gdb", layer="backup", engine="pyogrio", driver="OpenFileGDB"
+    )
+    make_archive.assert_called_once_with(
+        str(tmp_path / "naloxone-backup"), "zip", root_dir=tmp_path, base_dir="naloxone-backup.gdb"
+    )
+    upload_args = gis.content.folders.get.return_value.add.call_args.kwargs
+    assert upload_args["item_properties"]["type"] == "File Geodatabase"
+    assert upload_args["item_properties"]["title"].startswith(f"{main.config.SKID_NAME} backup ")
+    assert upload_args["file"] == archive_path
+
+
+def test_publish_sheet_restores_previous_data_when_update_fails(mocker, tmp_path):
+    loader = mocker.Mock()
+    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    new_data = pd.DataFrame({"Organization_Name": ["New"]})
+    previous_data = pd.DataFrame({"Organization_Name": ["Existing"]})
+    mocker.patch.object(main, "_load_sheet_for_agol", return_value=new_data)
+    mocker.patch.object(main, "_conform_to_schema", side_effect=lambda df, schema: df.copy())
+    mocker.patch.object(main.arcgis.gis, "GIS")
+    backup_item = mocker.Mock(title="persistent backup")
+    save_backup = mocker.patch.object(main, "_save_agol_backup", return_value=(backup_item, []))
+    delete_backups = mocker.patch.object(main, "_delete_prior_agol_backups")
+    updater = mocker.Mock()
+    updater.service.query.return_value.sdf = previous_data
+    updater.truncate_and_load.side_effect = [RuntimeError("append failed"), 1]
+    mocker.patch.object(main.load, "ServiceUpdater", return_value=updater)
+
+    with pytest.raises(RuntimeError, match="previous feature layer data was restored"):
+        main._publish_sheet(loader, secrets, tmp_path)
+
+    assert updater.truncate_and_load.call_count == 2
+    assert updater.truncate_and_load.call_args_list[0].args[0].equals(new_data)
+    assert updater.truncate_and_load.call_args_list[0].kwargs == {"save_old": True}
+    assert updater.truncate_and_load.call_args_list[1].args[0].equals(previous_data)
+    assert updater.truncate_and_load.call_args_list[1].kwargs == {"save_old": False}
+    save_backup.assert_called_once()
+    delete_backups.assert_not_called()
+
+
+def test_publish_sheet_reports_when_restoring_previous_data_fails(mocker, tmp_path):
+    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    mocker.patch.object(main, "_load_sheet_for_agol", return_value=pd.DataFrame({"Organization_Name": ["New"]}))
+    mocker.patch.object(main, "_conform_to_schema", side_effect=lambda df, schema: df.copy())
+    mocker.patch.object(main.arcgis.gis, "GIS")
+    backup_item = mocker.Mock(title="persistent backup")
+    mocker.patch.object(main, "_save_agol_backup", return_value=(backup_item, []))
+    updater = mocker.Mock()
+    updater.service.query.return_value.sdf = pd.DataFrame({"Organization_Name": ["Existing"]})
+    updater.truncate_and_load.side_effect = [RuntimeError("append failed"), RuntimeError("restore failed")]
+    mocker.patch.object(main.load, "ServiceUpdater", return_value=updater)
+
+    with pytest.raises(RuntimeError, match="automatic restoration also failed.*persistent backup"):
+        main._publish_sheet(mocker.Mock(), secrets, tmp_path)
+
+    assert updater.truncate_and_load.call_count == 2
+
+
+def test_publish_sheet_replaces_old_backup_after_success(mocker, tmp_path):
+    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    mocker.patch.object(main, "_load_sheet_for_agol", return_value=pd.DataFrame({"Organization_Name": ["New"]}))
+    mocker.patch.object(main, "_conform_to_schema", side_effect=lambda df, schema: df.copy())
+    mocker.patch.object(main.arcgis.gis, "GIS")
+    backup_item = mocker.Mock(title="latest backup", id="new")
+    old_item = mocker.Mock(id="old")
+    old_item.delete.return_value = True
+    mocker.patch.object(main, "_save_agol_backup", return_value=(backup_item, [old_item]))
+    updater = mocker.Mock()
+    updater.service.query.return_value.sdf = pd.DataFrame({"Organization_Name": ["Existing"]})
+    updater.truncate_and_load.return_value = 1
+    mocker.patch.object(main.load, "ServiceUpdater", return_value=updater)
+
+    assert main._publish_sheet(mocker.Mock(), secrets, tmp_path) == 1
+
+    old_item.delete.assert_called_once_with()
+
+
 @pytest.mark.parametrize(
     ("argv", "expected_mode"),
     [

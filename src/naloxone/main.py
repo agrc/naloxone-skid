@@ -5,6 +5,7 @@ Run the SKIDNAME script as a Cloud Run Job or console entry point.
 import argparse
 import json
 import logging
+import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ import pandas as pd
 import requests
 from google.auth import default as google_auth_default
 from palletjack import extract, load, transform
+from palletjack import utils as palletjack_utils
 from pygsheets.utils import format_addr
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
@@ -366,6 +368,61 @@ def _load_sheet_for_agol(loader, sheet_id):
     return spatial_df
 
 
+def _save_agol_backup(gis, previous_df, working_dir):
+    """Persist the current feature data as a private AGOL file-geodatabase item."""
+    if previous_df.empty:
+        return None, []
+
+    title_prefix = f"{config.SKID_NAME} backup "
+    existing_items = gis.content.search(
+        f'title:"{config.SKID_NAME} backup" AND owner:{gis.users.me.username}',
+        item_type="File Geodatabase",
+        max_items=100,
+    )
+    existing_items = [item for item in existing_items if item.title.startswith(title_prefix)]
+
+    gdb_path = working_dir / "naloxone-backup.gdb"
+    backup_gdf = palletjack_utils.convert_to_gdf(previous_df)
+    backup_gdf.to_file(gdb_path, layer="backup", engine="pyogrio", driver="OpenFileGDB")
+    zipped_gdb_path = shutil.make_archive(
+        str(working_dir / "naloxone-backup"),
+        "zip",
+        root_dir=working_dir,
+        base_dir=gdb_path.name,
+    )
+
+    title = f"{title_prefix}{datetime.now(UTC).strftime('%Y%m%d-%H%M%S-%f')}"
+    upload_job = gis.content.folders.get().add(
+        item_properties={
+            "type": "File Geodatabase",
+            "title": title,
+            "snippet": f"Private recovery backup for {config.SKID_NAME}.",
+            "tags": f"{config.SKID_NAME}, backup",
+        },
+        file=zipped_gdb_path,
+    )
+    backup_item = upload_job.result()
+    if backup_item is None:
+        raise RuntimeError("AGOL did not return the uploaded file-geodatabase backup item.")
+
+    return backup_item, existing_items
+
+
+def _delete_prior_agol_backups(backup_item, existing_items, module_logger):
+    """Remove older backups only after the new publish has completed successfully."""
+    for item in existing_items:
+        if item.id == backup_item.id:
+            continue
+        try:
+            if not item.delete():
+                raise RuntimeError(f"Could not remove superseded AGOL backup item {item.id}.")
+        except Exception:
+            module_logger.warning(
+                f"Could not remove superseded AGOL backup item {item.id}; keeping it in AGOL.",
+                exc_info=True,
+            )
+
+
 def _publish_sheet(loader, secrets, working_dir):
     """Load the saved sheet data into AGOL without checking links or geocoding."""
     module_logger = logging.getLogger(config.SKID_NAME)
@@ -378,8 +435,35 @@ def _publish_sheet(loader, secrets, working_dir):
 
     gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
     overwriter = load.ServiceUpdater(gis, secrets.FEATURE_LAYER_ITEMID, working_dir=working_dir)
-    overwriter.truncate_and_load(update_df, save_old=True)
-    module_logger.info(f"Overwrote {len(update_df)} features to AGOL Feature Layer. Backup saved in {working_dir}.")
+
+    previous_df = overwriter.service.query().sdf
+    previous_df = _conform_to_schema(previous_df, config.AGOL_SCHEMA).reset_index(drop=True)
+    backup_item, existing_backups = _save_agol_backup(gis, previous_df, working_dir)
+    try:
+        overwriter.truncate_and_load(update_df, save_old=True)
+    except Exception as publish_error:
+        if previous_df.empty:
+            module_logger.exception("AGOL publishing failed; the layer was empty, so there was no prior data to restore.")
+            raise
+
+        module_logger.exception("AGOL publishing failed; attempting to restore the previous feature layer data.")
+        try:
+            restored_count = overwriter.truncate_and_load(previous_df, save_old=False)
+        except Exception as restore_error:
+            module_logger.exception("Automatic restoration of the previous feature layer data failed.")
+            recovery_item = f" Persistent AGOL backup: {backup_item.title}." if backup_item else ""
+            raise RuntimeError(
+                "AGOL publishing failed and automatic restoration also failed; the live layer may require manual "
+                f"recovery.{recovery_item}"
+            ) from restore_error
+
+        module_logger.error(f"Restored {restored_count} previously published features after the failed update.")
+        raise RuntimeError("AGOL publishing failed; the previous feature layer data was restored.") from publish_error
+
+    if backup_item:
+        _delete_prior_agol_backups(backup_item, existing_backups, module_logger)
+        module_logger.info(f"Persistent recovery backup saved as AGOL item {backup_item.title}.")
+    module_logger.info(f"Overwrote {len(update_df)} features to AGOL Feature Layer.")
     return len(update_df)
 
 

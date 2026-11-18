@@ -16,6 +16,8 @@ Use the Google Sheets deployment add-on after updating the source spreadsheet. T
 
 Publishing replaces the AGOL feature layer as before, so use the publish action only when the sheet is ready. Running `naloxone` directly with no arguments still runs preparation followed by publishing; `naloxone --mode prepare` and `naloxone --mode publish` run the steps independently.
 
+Before publishing, the job saves the current layer as a private File Geodatabase item in the AGOL account used by the job. The latest backup is retained until a later publish completes successfully. The AGOL account must be allowed to create and delete content items. If publishing fails, the job attempts to restore the previous layer data; if that restoration also fails, the durable backup item remains in AGOL for recovery and its title is included in the error.
+
 An example script and json config can be found in the src/apps-script directory.
 
 Note that the Apps Scripts GCP project needs to be pointed at the same GCP project as the hosting project.
