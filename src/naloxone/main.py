@@ -216,7 +216,12 @@ def _conform_to_schema(df, schema):
     df = df.drop(columns=extra)
 
     for field, field_type in schema.items():
-        if field_type not in ("int", "float") or field not in df.columns:
+        if field not in df.columns:
+            continue
+        if field_type == "str":
+            df[field] = df[field].astype("string")
+            continue
+        if field_type not in ("int", "float"):
             continue
 
         text = df[field].where(df[field].notna(), "").astype(str).str.strip()
@@ -488,7 +493,12 @@ def process(mode=None):
         module_logger = logging.getLogger(config.SKID_NAME)
         module_logger.info(f"Starting {config.SKID_NAME} version {__version__}")
 
-        credentials, _ = google_auth_default()
+        credentials, _ = google_auth_default(
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive",
+            ]
+        )
         loader = extract.GSheetLoader(credentials)
 
         prepared_count = None
