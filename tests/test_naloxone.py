@@ -209,7 +209,9 @@ def test_save_agol_backup_uploads_private_geodatabase(mocker, tmp_path):
 
 def test_publish_sheet_restores_previous_data_when_update_fails(mocker, tmp_path):
     loader = mocker.Mock()
-    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    secrets = SimpleNamespace(
+        SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password", FEATURE_LAYER_ITEMID="item-id"
+    )
     new_data = pd.DataFrame({"Organization_Name": ["New"]})
     previous_data = pd.DataFrame({"Organization_Name": ["Existing"]})
     mocker.patch.object(main, "_load_sheet_for_agol", return_value=new_data)
@@ -236,7 +238,9 @@ def test_publish_sheet_restores_previous_data_when_update_fails(mocker, tmp_path
 
 
 def test_publish_sheet_reports_when_restoring_previous_data_fails(mocker, tmp_path):
-    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    secrets = SimpleNamespace(
+        SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password", FEATURE_LAYER_ITEMID="item-id"
+    )
     mocker.patch.object(main, "_load_sheet_for_agol", return_value=pd.DataFrame({"Organization_Name": ["New"]}))
     mocker.patch.object(main, "_conform_to_schema", side_effect=lambda df, schema: df.copy())
     mocker.patch.object(main.arcgis.gis, "GIS")
@@ -254,7 +258,9 @@ def test_publish_sheet_reports_when_restoring_previous_data_fails(mocker, tmp_pa
 
 
 def test_publish_sheet_replaces_old_backup_after_success(mocker, tmp_path):
-    secrets = SimpleNamespace(SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password")
+    secrets = SimpleNamespace(
+        SHEET_ID="sheet-id", AGOL_USER="user", AGOL_PASSWORD="password", FEATURE_LAYER_ITEMID="item-id"
+    )
     mocker.patch.object(main, "_load_sheet_for_agol", return_value=pd.DataFrame({"Organization_Name": ["New"]}))
     mocker.patch.object(main, "_conform_to_schema", side_effect=lambda df, schema: df.copy())
     mocker.patch.object(main.arcgis.gis, "GIS")
