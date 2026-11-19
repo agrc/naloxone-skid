@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-naloxone = "naloxone.main:process"
+naloxone = "naloxone.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/naloxone"]

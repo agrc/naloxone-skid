@@ -9,7 +9,14 @@ This skid is executed on demand by VIPP employees via a via Google Apps Scripts 
 
 ## Running a sheet deployment
 
-Use the Google Sheets deployment add-on to request an on-demand run of the deployed skid after updating the source spreadsheet. This is accessible via the "Deployment" menu -> "Deploy Configs to..." item in both of the config spreadsheets. The add-on triggers the data sync; it is separate from deploying a new version of the skid.
+Use the Google Sheets deployment add-on after updating the source spreadsheet. The "Deployment" menu provides two actions:
+
+1. **Check websites and geocode sheet** checks website URLs, geocodes addresses, and writes results to the sheet without changing AGOL. Run this again as needed while reviewing or correcting the sheet.
+2. **Publish sheet data to AGOL** loads the saved coordinates and source data from the sheet into AGOL. It does not rerun URL checks or geocoding.
+
+Publishing replaces the AGOL feature layer as before, so use the publish action only when the sheet is ready. Running `naloxone` directly with no arguments still runs preparation followed by publishing; `naloxone --mode prepare` and `naloxone --mode publish` run the steps independently.
+
+Before publishing, the job saves the current layer as a private File Geodatabase item in the AGOL account used by the job. The latest backup is retained until a later publish completes successfully. The AGOL account must be allowed to create and delete content items. If publishing fails, the job attempts to restore the previous layer data; if that restoration also fails, the durable backup item remains in AGOL for recovery and its title is included in the error.
 
 An example script and json config can be found in the src/apps-script directory.
 
@@ -23,6 +30,8 @@ The [DEQ Enviro config spreadsheet deploy add-on](https://github.com/agrc/deq-en
 `naloxone-skid` runs as a Google Cloud Run Job and can also be run locally for development. GitHub Actions builds and deploys the container to the dev project when changes are pushed to `dev`, and deploys to production when a release is published. The container image is stored in Artifact Registry, and the job reads its secrets from Secret Manager.
 
 The skid is started on demand from the Google Sheets deployment add-on; it does not use a Cloud Scheduler job. The GCP project must have the Cloud Run Job, Artifact Registry repository, Secret Manager secret (`skid-secrets`), and the service accounts and Workload Identity Federation permissions used by GitHub Actions and Cloud Run. The Apps Script GCP project must be the same project as the one hosting the skid.
+
+The Google account running either Apps Script action must also be authorized to run the Cloud Run Job with execution overrides (`run.jobs.runWithOverrides`), which are used to select the preparation or publishing mode. 
 
 ## Running Locally
 Use Python 3.13, matching the version used to build the Cloud Run container. Clone the repository, then create the local secrets file. For local development, the `secrets.json` file holds all the login info, etc. A template is available in the repo's root directory. 
