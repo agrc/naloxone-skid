@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -143,12 +144,12 @@ def test_load_sheet_for_agol_uses_saved_coordinates(mocker):
     assert from_xy.call_args.kwargs == {"sr": 4326}
 
 
-def test_load_sheet_for_agol_publishes_rows_without_valid_geometry(mocker):
+def test_load_sheet_for_agol_does_not_validate_or_rewrite_coordinates(mocker):
     source = pd.DataFrame(
         {
-            "Organization_Name": ["Origin", "Blank", "Non-numeric", "Out of range", "Valid"],
-            "x": ["0", "", "invalid", "181", "-111.94"],
-            "y": ["0", "40.77", "40.77", "40.77", "40.77"],
+            "Organization_Name": ["Origin", "Out of range", "Non-numeric"],
+            "x": ["0", "181", "invalid"],
+            "y": ["0", "40.77", "40.77"],
         }
     )
     loader = mocker.Mock()
@@ -160,13 +161,15 @@ def test_load_sheet_for_agol_publishes_rows_without_valid_geometry(mocker):
         result["SHAPE"] = list(zip(result[x_column], result[y_column]))
         return result
 
-    mocker.patch.object(pd.DataFrame, "spatial", SimpleNamespace(from_xy=from_xy))
+    from_xy_mock = mocker.Mock(side_effect=from_xy)
+    mocker.patch.object(pd.DataFrame, "spatial", SimpleNamespace(from_xy=from_xy_mock))
 
     result = main._load_sheet_for_agol(loader, "sheet-id")
 
     assert result["Organization_Name"].tolist() == source["Organization_Name"].tolist()
-    assert result["SHAPE"].iloc[:4].tolist() == [None] * 4
-    assert result["SHAPE"].iloc[4] == (-111.94, 40.77)
+    coordinates = from_xy_mock.call_args.args[0][["x", "y"]]
+    assert coordinates.iloc[:2].values.tolist() == [[0.0, 0.0], [181.0, 40.77]]
+    assert pd.isna(coordinates["x"].iloc[2])
 
 
 def test_load_sheet_for_agol_requires_prepared_coordinates(mocker):
@@ -178,33 +181,52 @@ def test_load_sheet_for_agol_requires_prepared_coordinates(mocker):
         main._load_sheet_for_agol(loader, "sheet-id")
 
 
-def test_save_agol_backup_uploads_private_geodatabase(mocker, tmp_path):
+def test_save_agol_backup_uploads_local_geodatabase_to_feature_layer_folder(mocker, tmp_path):
+    backup_gdb_path = tmp_path / "backup.gdb"
+    backup_gdb_path.mkdir()
     gis = mocker.Mock()
     gis.users.me.username = "user"
     existing_item = mocker.Mock()
     existing_item.title = f"{main.config.SKID_NAME} backup old"
     gis.content.search.return_value = [existing_item]
+    feature_layer_item = mocker.Mock(ownerFolder="feature-folder-id", owner="user")
+    gis.content.get.return_value = feature_layer_item
     new_item = mocker.Mock()
-    gis.content.folders.get.return_value.add.return_value.result.return_value = new_item
-    backup_gdf = mocker.Mock()
-    mocker.patch.object(main.palletjack_utils, "convert_to_gdf", return_value=backup_gdf)
-    archive_path = str(tmp_path / "naloxone-backup.zip")
+    feature_folder = gis.content.folders.get.return_value
+    feature_folder.add.return_value.result.return_value = new_item
+    archive_path = str(tmp_path / "naloxone-skid-backup.zip")
     make_archive = mocker.patch.object(main.shutil, "make_archive", return_value=archive_path)
 
-    backup_item, existing_items = main._save_agol_backup(gis, pd.DataFrame({"SHAPE": [object()]}), tmp_path)
+    backup_item, existing_items = main._save_agol_backup(
+        gis, backup_gdb_path, "feature-layer-id", tmp_path
+    )
 
     assert backup_item is new_item
     assert existing_items == [existing_item]
-    backup_gdf.to_file.assert_called_once_with(
-        tmp_path / "naloxone-backup.gdb", layer="backup", engine="pyogrio", driver="OpenFileGDB"
-    )
-    make_archive.assert_called_once_with(
-        str(tmp_path / "naloxone-backup"), "zip", root_dir=tmp_path, base_dir="naloxone-backup.gdb"
-    )
-    upload_args = gis.content.folders.get.return_value.add.call_args.kwargs
+    gis.content.get.assert_called_once_with("feature-layer-id")
+    gis.content.folders.get.assert_called_once_with(folder="feature-folder-id", owner="user")
+    make_archive.assert_called_once()
+    archive_args = make_archive.call_args
+    assert Path(archive_args.args[0]).parent == tmp_path
+    assert Path(archive_args.args[0]).name.startswith(f"{main.config.SKID_NAME}-backup-")
+    assert archive_args.args[1:] == ("zip",)
+    assert archive_args.kwargs == {"root_dir": tmp_path, "base_dir": "backup.gdb"}
+    upload_args = feature_folder.add.call_args.kwargs
     assert upload_args["item_properties"]["type"] == "File Geodatabase"
     assert upload_args["item_properties"]["title"].startswith(f"{main.config.SKID_NAME} backup ")
     assert upload_args["file"] == archive_path
+
+
+def test_save_agol_backup_skips_missing_local_geodatabase(mocker, tmp_path):
+    gis = mocker.Mock()
+
+    backup_item, existing_items = main._save_agol_backup(
+        gis, tmp_path / "backup.gdb", "feature-layer-id", tmp_path
+    )
+
+    assert backup_item is None
+    assert existing_items == []
+    gis.content.search.assert_not_called()
 
 
 def test_publish_sheet_restores_previous_data_when_update_fails(mocker, tmp_path):
@@ -234,7 +256,8 @@ def test_publish_sheet_restores_previous_data_when_update_fails(mocker, tmp_path
     assert updater.truncate_and_load.call_args_list[1].args[0].equals(previous_data)
     assert updater.truncate_and_load.call_args_list[1].kwargs == {"save_old": False}
     save_backup.assert_called_once()
-    delete_backups.assert_not_called()
+    delete_backups.assert_called_once()
+    assert delete_backups.call_args.args[:2] == (backup_item, [])
 
 
 def test_publish_sheet_reports_when_restoring_previous_data_fails(mocker, tmp_path):
@@ -267,14 +290,18 @@ def test_publish_sheet_replaces_old_backup_after_success(mocker, tmp_path):
     backup_item = mocker.Mock(title="latest backup", id="new")
     old_item = mocker.Mock(id="old")
     old_item.delete.return_value = True
-    mocker.patch.object(main, "_save_agol_backup", return_value=(backup_item, [old_item]))
+    events = []
+    save_backup = mocker.patch.object(main, "_save_agol_backup", return_value=(backup_item, [old_item]))
+    save_backup.side_effect = lambda *args: (events.append("backup") or backup_item, [old_item])
     updater = mocker.Mock()
     updater.service.query.return_value.sdf = pd.DataFrame({"Organization_Name": ["Existing"]})
-    updater.truncate_and_load.return_value = 1
+    updater.truncate_and_load.side_effect = lambda *args, **kwargs: events.append("truncate") or 1
     mocker.patch.object(main.load, "ServiceUpdater", return_value=updater)
 
     assert main._publish_sheet(mocker.Mock(), secrets, tmp_path) == 1
 
+    assert events == ["truncate", "backup"]
+    save_backup.assert_called_once()
     old_item.delete.assert_called_once_with()
 
 
