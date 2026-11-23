@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      :root {
+        --primary: #1a73e8;
+        --primary-hover: #1557b0;
+        --secondary: #ffffff;
+        --secondary-border: #dadce0;
+        --secondary-hover: #f1f3f4;
+        --text-main: #202124;
+        --text-muted: #5f6368;
+        --bg-page: #f8f9fa;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        margin: 0;
+        padding: 16px;
+        background-color: var(--bg-page);
+        color: var(--text-main);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .card {
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+      }
+
+      h2 {
+        margin: 0 0 6px 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-main);
+      }
+
+      p.subtitle {
+        margin: 0 0 16px 0;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .btn-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background-color: var(--primary);
+        color: #ffffff;
+        border: 1px solid var(--primary);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background-color: var(--primary-hover);
+      }
+
+      .btn-secondary {
+        background-color: var(--secondary);
+        color: var(--primary);
+        border: 1px solid var(--secondary-border);
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background-color: var(--secondary-hover);
+      }
+
+      .btn-desc {
+        display: block;
+        font-size: 11px;
+        font-weight: 400;
+        opacity: 0.85;
+        margin-top: 2px;
+      }
+
+      /* Status Panel */
+      .status-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .status-box {
+        border-radius: 6px;
+        padding: 12px;
+        border: 1px solid #e0e0e0;
+        background-color: #fafafa;
+        transition: all 0.2s ease;
+      }
+
+      .status-box.running {
+        background-color: #e8f0fe;
+        border-color: #aecbfa;
+        color: #174ea6;
+      }
+
+      .status-box.success {
+        background-color: #e6f4ea;
+        border-color: #ceead6;
+        color: #137333;
+      }
+
+      .status-box.error {
+        background-color: #fce8e6;
+        border-color: #fad2cf;
+        color: #c5221f;
+      }
+
+      .status-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .title-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .elapsed-badge {
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .status-message {
+        font-size: 12px;
+        margin: 0;
+      }
+
+      .status-details {
+        margin-top: 10px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        font-family: 'Roboto Mono', monospace;
+        font-size: 11px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 260px;
+        overflow-y: auto;
+        color: #202124;
+      }
+
+      .timestamp {
+        font-size: 10px;
+        font-weight: 400;
+        color: var(--text-muted);
+      }
+
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(23, 78, 166, 0.25);
+        border-top-color: #174ea6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Update & Publish Data</h2>
+      <p class="subtitle">First prepare and check your data, then publish your changes to ArcGIS Online.</p>
+
+      <div class="btn-group">
+        <button id="btn-prepare" class="btn-primary" onclick="runJob('prepare')">
+          <div>
+            <span>Prepare & Geocode</span>
+            <span class="btn-desc">Check websites and geocode addresses</span>
+          </div>
+          <span>→</span>
+        </button>
+
+        <button id="btn-publish" class="btn-primary" onclick="runJob('publish')">
+          <div>
+            <span>Publish to AGOL</span>
+            <span class="btn-desc">Push validated data to ArcGIS Online</span>
+          </div>
+          <span>→</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="status-header">
+        <span>Status</span>
+        <span id="status-time" class="timestamp"></span>
+      </div>
+
+      <div id="status-box" class="status-box">
+        <div class="status-title-row">
+          <div id="status-title" class="title-left">Ready</div>
+          <span id="elapsed-badge" class="elapsed-badge" style="display: none;">0s</span>
+        </div>
+        <p id="status-message" class="status-message">
+          Waiting for a task to be started.
+        </p>
+        <pre id="status-details" class="status-details" style="display: none;"></pre>
+      </div>
+    </div>
+
+    <script>
+      let pollInterval = null;
+      let timerInterval = null;
+      let startTime = null;
+      let isPollingRequestInFlight = false;
+
+      function setButtonsDisabled(disabled) {
+        document.getElementById('btn-prepare').disabled = disabled;
+        document.getElementById('btn-publish').disabled = disabled;
+      }
+
+      function getTimestamp() {
+        return new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+      }
+
+      function startTimer() {
+        stopTimers();
+        startTime = Date.now();
+        const badge = document.getElementById('elapsed-badge');
+        badge.style.display = 'inline-block';
+        badge.textContent = '0s';
+
+        timerInterval = setInterval(() => {
+          const secs = Math.floor((Date.now() - startTime) / 1000);
+          const mins = Math.floor(secs / 60);
+          const remSecs = secs % 60;
+          badge.textContent = mins > 0 ? `${mins}m ${remSecs}s` : `${secs}s`;
+        }, 1000);
+      }
+
+      function stopTimers() {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+        isPollingRequestInFlight = false;
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      function updateStatus(state, title, message, details) {
+        const box = document.getElementById('status-box');
+        const titleEl = document.getElementById('status-title');
+        const msgEl = document.getElementById('status-message');
+        const detailsEl = document.getElementById('status-details');
+        const timeEl = document.getElementById('status-time');
+
+        box.className = 'status-box ' + state;
+        timeEl.textContent = getTimestamp();
+
+        if (state === 'running') {
+          titleEl.innerHTML =
+            '<div class="spinner"></div><span>' + escapeHtml(title) + '</span>';
+        } else {
+          titleEl.textContent = title;
+        }
+
+        msgEl.textContent = message;
+
+        if (details) {
+          detailsEl.textContent = details;
+          detailsEl.style.display = 'block';
+        } else {
+          detailsEl.textContent = '';
+          detailsEl.style.display = 'none';
+        }
+      }
+
+      function notifyCompletion(title, message) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body: message });
+        }
+      }
+
+      function startPolling(operationName, executionName, action) {
+        pollInterval = setInterval(() => {
+          if (isPollingRequestInFlight) return;
+          isPollingRequestInFlight = true;
+
+          google.script.run
+            .withSuccessHandler(function (status) {
+              isPollingRequestInFlight = false;
+
+              if (!status.done) {
+                updateStatus(
+                  'running',
+                  `Running ${action}...`,
+                  status.message || 'Processing your data...',
+                  `Execution: ${executionName.split('/').pop()}`
+                );
+                return;
+              }
+
+              // Task finished
+              stopTimers();
+              setButtonsDisabled(false);
+
+              if (status.success) {
+                updateStatus('success', status.title, status.message, status.details);
+                notifyCompletion(status.title, status.message);
+              } else {
+                updateStatus('error', status.title, status.message, status.details);
+                notifyCompletion(status.title, status.message);
+              }
+            })
+            .withFailureHandler(function (err) {
+              isPollingRequestInFlight = false;
+              stopTimers();
+              setButtonsDisabled(false);
+              updateStatus(
+                'error',
+                'Status Check Failed',
+                'Lost connection while checking task progress.',
+                err.message || String(err)
+              );
+            })
+            .checkJobStatus(operationName, executionName, action);
+        }, 4000);
+      }
+
+      function runJob(jobType) {
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+
+        setButtonsDisabled(true);
+        startTimer();
+
+        const jobLabel =
+          jobType === 'prepare' ? 'Sheet preparation' : 'AGOL publishing';
+
+        updateStatus(
+          'running',
+          'Starting ' + jobLabel + '...',
+          'Starting the task...',
+          null
+        );
+
+        const runner = google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.success) {
+              updateStatus(
+                'running',
+                `Running ${res.action}...`,
+                res.message,
+                `Execution: ${res.executionName.split('/').pop()}`
+              );
+              startPolling(res.operationName, res.executionName, res.action);
+            } else {
+              stopTimers();
+              setButtonsDisabled(false);
+              updateStatus(
+                'error',
+                (res && res.title) || 'Task Failed',
+                (res && res.message) || 'Something went wrong while starting the task.',
+                (res && res.details) || ''
+              );
+            }
+          })
+          .withFailureHandler(function (err) {
+            stopTimers();
+            setButtonsDisabled(false);
+            updateStatus(
+              'error',
+              'Apps Script Error',
+              'Failed to communicate with the server script.',
+              err.message || String(err)
+            );
+          });
+
+        if (jobType === 'prepare') {
+          runner.callPrepareFunction();
+        } else {
+          runner.callPublishFunction();
+        }
+      }
+    </script>
+  </body>
+</html>
