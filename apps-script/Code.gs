@@ -123,11 +123,15 @@ function checkJobStatus(operationName, executionName, action) {
     const data = JSON.parse(text);
 
     if (code !== 200) {
+      const retryable = code === 408 || code === 429 || code >= 500;
       return {
-        done: true,
-        success: false,
-        title: `${action} Status Error (HTTP ${code})`,
-        message: "Unable to check task progress.",
+        done: false,
+        pollingError: true,
+        retryable: retryable,
+        title: `${action} Status Check Failed (HTTP ${code})`,
+        message: retryable
+          ? "Unable to check task progress; the execution may still be running."
+          : "Status access was rejected; the execution may still be running.",
         details: text,
       };
     }
@@ -175,8 +179,9 @@ function checkJobStatus(operationName, executionName, action) {
     };
   } catch (err) {
     return {
-      done: true,
-      success: false,
+      done: false,
+      pollingError: true,
+      retryable: true,
       title: `${action} Status Error`,
       message: "Lost connection while checking task progress.",
       details: err.toString(),

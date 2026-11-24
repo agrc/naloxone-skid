@@ -142,6 +142,12 @@
         color: #c5221f;
       }
 
+      .status-box.unknown {
+        background-color: #fef7e0;
+        border-color: #fce8b2;
+        color: #7a4f01;
+      }
+
       .status-title-row {
         display: flex;
         align-items: center;
@@ -247,18 +253,40 @@
           Waiting for a task to be started.
         </p>
         <pre id="status-details" class="status-details" style="display: none;"></pre>
+        <button
+          id="btn-retry-status"
+          class="btn-secondary"
+          type="button"
+          onclick="retryStatusNow()"
+          style="display: none; margin-top: 10px; text-align: center; justify-content: center;"
+        >
+          Check status now
+        </button>
       </div>
     </div>
 
     <script>
-      let pollInterval = null;
+      const POLL_INTERVAL_MS = 4000;
+      const MAX_POLL_INTERVAL_MS = 30000;
+      const STATUS_RECOVERY_THRESHOLD = 5;
+
+      let pollTimeout = null;
       let timerInterval = null;
       let startTime = null;
       let isPollingRequestInFlight = false;
+      let currentExecution = null;
+      let pollFailureCount = 0;
 
       function setButtonsDisabled(disabled) {
         document.getElementById('btn-prepare').disabled = disabled;
         document.getElementById('btn-publish').disabled = disabled;
+      }
+
+      function setStatusRetryButton(visible, disabled = false) {
+        const button = document.getElementById('btn-retry-status');
+        button.style.display = visible ? 'block' : 'none';
+        button.disabled = disabled;
+        button.textContent = disabled ? 'Checking...' : 'Check status now';
       }
 
       function getTimestamp() {
@@ -285,15 +313,17 @@
       }
 
       function stopTimers() {
-        if (pollInterval) {
-          clearInterval(pollInterval);
-          pollInterval = null;
+        if (pollTimeout) {
+          clearTimeout(pollTimeout);
+          pollTimeout = null;
         }
         if (timerInterval) {
           clearInterval(timerInterval);
           timerInterval = null;
         }
         isPollingRequestInFlight = false;
+        currentExecution = null;
+        setStatusRetryButton(false);
       }
 
       function escapeHtml(str) {
@@ -337,49 +367,116 @@
       }
 
       function startPolling(operationName, executionName, action) {
-        pollInterval = setInterval(() => {
-          if (isPollingRequestInFlight) return;
-          isPollingRequestInFlight = true;
+        currentExecution = { operationName, executionName, action };
+        pollFailureCount = 0;
+        setStatusRetryButton(false);
+        checkCurrentStatus();
+      }
 
-          google.script.run
-            .withSuccessHandler(function (status) {
-              isPollingRequestInFlight = false;
+      function scheduleStatusCheck(delay) {
+        if (!currentExecution) return;
+        if (pollTimeout) clearTimeout(pollTimeout);
+        pollTimeout = setTimeout(() => {
+          pollTimeout = null;
+          checkCurrentStatus();
+        }, delay);
+      }
 
-              if (!status.done) {
-                updateStatus(
-                  'running',
-                  `Running ${action}...`,
-                  status.message || 'Processing your data...',
-                  `Execution: ${executionName.split('/').pop()}`
-                );
-                return;
-              }
+      function checkCurrentStatus() {
+        if (!currentExecution || isPollingRequestInFlight) return;
 
-              // Task finished
-              stopTimers();
-              setButtonsDisabled(false);
+        const { operationName, executionName, action } = currentExecution;
+        isPollingRequestInFlight = true;
 
-              if (status.success) {
-                updateStatus('success', status.title, status.message, status.details);
-                notifyCompletion(status.title, status.message);
-              } else {
-                updateStatus('error', status.title, status.message, status.details);
-                notifyCompletion(status.title, status.message);
-              }
-            })
-            .withFailureHandler(function (err) {
-              isPollingRequestInFlight = false;
-              stopTimers();
-              setButtonsDisabled(false);
-              updateStatus(
-                'error',
-                'Status Check Failed',
-                'Lost connection while checking task progress.',
-                err.message || String(err)
+        google.script.run
+          .withSuccessHandler(function (status) {
+            isPollingRequestInFlight = false;
+
+            if (!status || status.pollingError || typeof status.done !== 'boolean') {
+              handleStatusCheckFailure(
+                (status && status.title) || 'Status Check Failed',
+                (status && status.message) || 'Received an invalid status response.',
+                (status && status.details) || '',
+                !status || status.retryable !== false
               );
-            })
-            .checkJobStatus(operationName, executionName, action);
-        }, 4000);
+              return;
+            }
+
+            pollFailureCount = 0;
+            setStatusRetryButton(false);
+
+            if (!status.done) {
+              updateStatus(
+                'running',
+                `Running ${action}...`,
+                status.message || 'Processing your data...',
+                `Execution: ${executionName.split('/').pop()}`
+              );
+              scheduleStatusCheck(POLL_INTERVAL_MS);
+              return;
+            }
+
+            stopTimers();
+            setButtonsDisabled(false);
+
+            if (status.success) {
+              updateStatus('success', status.title, status.message, status.details);
+              notifyCompletion(status.title, status.message);
+            } else {
+              updateStatus('error', status.title, status.message, status.details);
+              notifyCompletion(status.title, status.message);
+            }
+          })
+          .withFailureHandler(function (err) {
+            isPollingRequestInFlight = false;
+            handleStatusCheckFailure(
+              'Status Check Failed',
+              'Lost connection while checking task progress.',
+              err.message || String(err),
+              true
+            );
+          })
+          .checkJobStatus(operationName, executionName, action);
+      }
+
+      function handleStatusCheckFailure(title, message, details, retryable) {
+        pollFailureCount += 1;
+        const persistent = !retryable || pollFailureCount >= STATUS_RECOVERY_THRESHOLD;
+        const delay = persistent
+          ? MAX_POLL_INTERVAL_MS
+          : Math.min(
+              POLL_INTERVAL_MS * Math.pow(2, pollFailureCount - 1),
+              MAX_POLL_INTERVAL_MS
+            );
+        const executionId = currentExecution.executionName.split('/').pop();
+        const statusMessage = persistent
+          ? `${message} The execution may still be running. Deployment actions remain disabled; status checks will continue every ${delay / 1000} seconds.`
+          : `${message} The execution may still be running. Retrying in ${delay / 1000} seconds.`;
+
+        updateStatus(
+          'unknown',
+          persistent ? 'Execution Status Unknown' : title,
+          statusMessage,
+          `Execution: ${executionId}${details ? '\n' + details : ''}`
+        );
+        setStatusRetryButton(persistent);
+        scheduleStatusCheck(delay);
+      }
+
+      function retryStatusNow() {
+        if (!currentExecution || isPollingRequestInFlight) return;
+        if (pollTimeout) {
+          clearTimeout(pollTimeout);
+          pollTimeout = null;
+        }
+        setStatusRetryButton(true, true);
+        updateStatus(
+          'unknown',
+          'Checking execution status...',
+          'Deployment actions remain disabled until Cloud Run confirms the execution has finished.',
+          `Execution: ${currentExecution.executionName.split('/').pop()}`
+        );
+        checkCurrentStatus();
       }
 
       function runJob(jobType) {
