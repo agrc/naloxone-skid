@@ -168,7 +168,9 @@ function checkJobStatus(operationName, executionName, action) {
     }
 
     // Job failed: build summary and query Cloud Logging for container output
-    const logs = fetchExecutionLogs(shortExecId);
+    const logs = [data.error?.message, fetchExecutionLogs(shortExecId)]
+      .filter(Boolean)
+      .join("\n\n");
 
     return {
       done: true,
