@@ -424,7 +424,9 @@ def _delete_prior_agol_backups(backup_item, existing_items, module_logger):
             )
 
     if failed_item_ids:
-        raise RuntimeError(f"Could not remove superseded AGOL backup items: {failed_item_ids}.")
+        module_logger.warning(
+            f"Could not remove superseded AGOL backup items: {failed_item_ids}; keeping them in AGOL."
+        )
 
 
 def _persist_agol_backup(gis, feature_layer_item_id, working_dir, module_logger):
