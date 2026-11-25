@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/agrc/naloxone-skid/compare/v1.0.0...v1.0.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* Enhance schema conformity handling for nullable integer columns ([53e734c](https://github.com/agrc/naloxone-skid/commit/53e734c6974a91675032bff51e174e26a549dcb3))
+
 ## 1.0.0 (2026-11-24)
 
 
