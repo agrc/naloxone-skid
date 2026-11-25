@@ -223,7 +223,7 @@ def _conform_to_schema(df, schema):
         if field_type not in ("int", "float"):
             continue
 
-        text = df[field].where(df[field].notna(), "").astype(str).str.strip()
+        text = df[field].astype("string").fillna("").str.strip()
         blank = text.eq("")
         converted = pd.to_numeric(text.mask(blank), errors="coerce")
         if field_type == "int":
