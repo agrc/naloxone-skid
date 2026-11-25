@@ -125,6 +125,15 @@ def test_conform_to_schema_keeps_every_record_and_drops_unmapped_columns():
     assert "unmapped_column" not in result.columns
 
 
+def test_conform_to_schema_handles_nullable_integer_columns():
+    df = pd.DataFrame({"Zip_Code": pd.Series([pd.NA, 84101], dtype="Int32")})
+
+    result = main._conform_to_schema(df, {"Zip_Code": "int"})
+
+    assert pd.isna(result["Zip_Code"].iloc[0])
+    assert result["Zip_Code"].iloc[1] == 84101
+
+
 def test_load_sheet_for_agol_uses_saved_coordinates(mocker):
     source = pd.DataFrame({"x": ["-111.94"], "y": ["40.77"]})
     loader = mocker.Mock()
